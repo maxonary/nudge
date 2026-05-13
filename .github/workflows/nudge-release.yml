@@ -1,0 +1,176 @@
+name: Nudge release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0) — used as the tag v<version>'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nudge-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version + tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            TAG="v${VERSION}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION} (tag: ${TAG})"
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project boringNotch.xcodeproj
+
+      - name: Archive (ad-hoc signed)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project boringNotch.xcodeproj \
+            -scheme boringNotch \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath build/Nudge.xcarchive \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            ENABLE_HARDENED_RUNTIME=YES \
+            MARKETING_VERSION="${VERSION}" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+
+      - name: Locate built app
+        id: app
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/Nudge.xcarchive/Products/Applications -maxdepth 1 -name '*.app' | head -n 1)
+          if [[ -z "${APP_PATH}" ]]; then
+            echo "::error::No .app found in archive"
+            exit 1
+          fi
+          echo "app_path=${APP_PATH}" >> "$GITHUB_OUTPUT"
+          echo "Found: ${APP_PATH}"
+
+      - name: Rename to Nudge.app
+        id: rename
+        env:
+          APP_PATH: ${{ steps.app.outputs.app_path }}
+        run: |
+          set -euo pipefail
+          DIR="$(dirname "${APP_PATH}")"
+          DEST="${DIR}/Nudge.app"
+          if [[ "${APP_PATH}" != "${DEST}" ]]; then
+            mv "${APP_PATH}" "${DEST}"
+          fi
+          echo "app_path=${DEST}" >> "$GITHUB_OUTPUT"
+          echo "Renamed to: ${DEST}"
+
+      - name: Re-sign after rename (ad-hoc)
+        env:
+          APP_PATH: ${{ steps.rename.outputs.app_path }}
+        run: |
+          set -euo pipefail
+          codesign --force --deep --sign - --options runtime "${APP_PATH}"
+          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+
+      - name: Zip
+        id: zip
+        env:
+          APP_PATH: ${{ steps.rename.outputs.app_path }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ZIP_NAME="Nudge-${VERSION}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "dist/${ZIP_NAME}"
+          (cd dist && shasum -a 256 "${ZIP_NAME}" > "${ZIP_NAME}.sha256")
+          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+          ls -lah dist/
+
+      - name: Generate release notes
+        id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP_NAME: ${{ steps.zip.outputs.zip_name }}
+        run: |
+          set -euo pipefail
+          SHA=$(awk '{print $1}' "dist/${ZIP_NAME}.sha256")
+          NOTES_FILE="dist/release-notes.md"
+          cat > "${NOTES_FILE}" <<EOF
+          Internal Nudge build for Ontora.
+
+          ## Install (Leon / David)
+
+          1. Download \`${ZIP_NAME}\` from the Assets below.
+          2. Unzip and drag \`Nudge.app\` into \`/Applications\`.
+          3. Clear Gatekeeper quarantine (one-time; we're ad-hoc signed, not notarized):
+
+             \`\`\`bash
+             xattr -dr com.apple.quarantine /Applications/Nudge.app
+             open /Applications/Nudge.app
+             \`\`\`
+
+          4. Pick your name on first launch and grant notification permission.
+
+          ## Verify download integrity
+
+          \`\`\`bash
+          shasum -a 256 ${ZIP_NAME}
+          # expected:
+          # ${SHA}  ${ZIP_NAME}
+          \`\`\`
+
+          Built from commit \`${{ github.sha }}\` on macOS runner.
+          EOF
+          echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP_NAME: ${{ steps.zip.outputs.zip_name }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+        run: |
+          set -euo pipefail
+          # Create the tag at the current commit if it doesn't exist
+          # (workflow_dispatch path may not have a tag yet)
+          if ! git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git tag "${TAG}"
+            git push origin "${TAG}"
+          fi
+          gh release create "${TAG}" \
+            "dist/${ZIP_NAME}" \
+            "dist/${ZIP_NAME}.sha256" \
+            --title "Nudge ${VERSION}" \
+            --notes-file "${NOTES_FILE}"
