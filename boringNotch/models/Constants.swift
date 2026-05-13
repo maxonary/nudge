@@ -199,4 +199,8 @@ extension Defaults.Keys {
     }
 
     static let didClearLegacyURLCacheV1 = Key<Bool>("didClearLegacyURLCache_v1", default: false)
+
+    // MARK: Nudge
+    static let nudgePlaySoundOnReceive = Key<Bool>("nudgePlaySoundOnReceive", default: true)
+    static let nudgeShowBackupNotification = Key<Bool>("nudgeShowBackupNotification", default: true)
 }
