@@ -1,191 +1,141 @@
-<h1 align="center">
-  <br>
-  <a href="http://theboring.name"><img src="https://framerusercontent.com/images/RFK4vs0kn8pRMuOO58JeyoemXA.png?scale-down-to=256" alt="Boring Notch" width="150"></a>
-  <br>
-  Boring Notch
-  <br>
-</h1>
+# Nudge
 
+Glanceable "raise hand" signal between Ontora founders that pierces noise-cancelling
+headphones without forcing anyone to physically get up.
 
-<p align="center">
-  <a title="Crowdin" target="_blank" href="https://crowdin.com/project/boring-notch"><img src="https://badges.crowdin.net/boring-notch/localized.svg"></a>
-  <img src="https://github.com/TheBoredTeam/boring.notch/actions/workflows/cicd.yml/badge.svg" alt="TheBoringNotch Build & Test" style="margin-right: 10px;" />
-  <a href="https://discord.gg/c8JXA7qrPm">
-    <img src="https://dcbadge.limes.pink/api/server/https://discord.gg/c8JXA7qrPm?style=flat" alt="Discord Badge" />
-  </a>
-  <a href="https://www.ko-fi.com/alexander5015">
-    <img src="https://srv-cdn.himpfen.io/badges/kofi/kofi-flat.svg" alt="Ko-Fi" />
-  </a>
-</p>
+## Backstory
 
-<!--Welcome to **Boring.Notch**, the coolest way to make your MacBook's notch the star of the show! Forget about those boring status bars—our notch turns into a dynamic music control center, complete with a snazzy visualizer and all the music controls you need. It's like having a mini concert right at the top of your screen! -->
+Ontora is a 3-founder YC X26 startup (Max, Leon, David) sharing a room in
+San Francisco. Leon and David both wear noise-cancelling headphones for deep
+work. Slack and WhatsApp don't pierce headphones. Calling someone in the same
+room feels insane. So the only way to get their attention has been to stand
+up and tap them on the shoulder, which kills your own focus too.
 
-Say hello to **Boring Notch**, the coolest way to make your MacBook’s notch the star of the show! Say goodbye to boring status bars: with Boring Notch, your notch transforms into a dynamic music control center, complete with a vibrant visualizer and all the essential music controls you need. But that’s just the start! Boring Notch also offers calendar integration, a handy file shelf with AirDrop support, a complete MacOS HUD replacement and more!
+Nudge fixes that: a glanceable signal in the MacBook notch. Click your notch,
+pick a teammate, their notch expands for ~6 seconds with `{sender} wants you`.
+A backup macOS notification fires in case the notch is off-screen (external
+monitor, full-screen window). No backend, no accounts, no message text —
+just the ping.
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/2d5f69c1-6e7b-4bc2-a6f1-bb9e27cf88a8" alt="Demo GIF" />
-</p>
+The friction of "I have to move the cursor to my notch to ping you" is a
+feature, not a bug. It filters out interruptions that aren't worth the cost.
 
-<!--https://github.com/user-attachments/assets/19b87973-4b3a-4853-b532-7e82d1d6b040-->
----
-<!--## Table of Contents
-- [Installation](#installation)
-- [Usage](#usage)
-- [Roadmap](#-roadmap)
-- [Building from Source](#building-from-source)
-- [Contributing](#-contributing)
-- [Join our Discord Server](#join-our-discord-server)
-- [Star History](#star-history)
-- [Buy us a coffee!](#buy-us-a-coffee)
-- [Acknowledgments](#-acknowledgments)-->
+Nudge is a fork of [Boring Notch](https://github.com/TheBoredTeam/boring.notch).
+Everything that doesn't serve the team-ping flow is disabled in this build;
+see `TODO_V2_CLEANUP.md` for the dormant code still on disk.
 
-## Installation
+## The shared topic nonce
 
-**System Requirements:**
-- macOS **14 Sonoma** or later
-- Apple Silicon or Intel Mac
+The transport is [ntfy.sh](https://ntfy.sh) — a public, free, no-account pub/sub
+service. Each user subscribes to a topic derived from their name plus a
+shared 12-char lowercase nonce. The nonce is the only thing that keeps random
+people on the internet from being able to ping us.
 
----
+The current nonce (baked into the build, read from `boringNotch/Nudge/NudgeConstants.swift`):
 
-### Option 1: Download and Install Manually
-
-<a href="https://github.com/TheBoredTeam/boring.notch/releases/latest/download/boringNotch.dmg" target="_self"><img width="200" src="https://github.com/user-attachments/assets/e3179be1-8416-4b8a-b417-743e1ecc67d6" alt="Download for macOS" /></a>
-
-Once downloaded, open the `.dmg` and move **Boring Notch** to your `/Applications` folder.
-
-> [!IMPORTANT]
-> We don't have an Apple Developer account (yet 👀), so macOS will warn you that Boring Notch is from an unidentified developer on first launch. This is expected behavior.
->
-> You'll need to bypass this before the app will open. You only need to do this once. Use one of the methods below.
-
----
-
-#### Recommended: Terminal (Always Works)
-
-This is the quickest and easiest method. It only requires a single command and works consistently for all users. System Settings can sometimes fail and won't work for non-admin users.
-
-After moving Boring Notch to your Applications folder, run:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/boringNotch.app
+```
+k4n9pq7vx2tm
 ```
 
-Then open the app normally.
+**Every Ontora teammate's build MUST have the same nonce.** To rotate it:
+edit `nudgeNonce` in `NudgeConstants.swift`, commit, and have everyone pull
+and rebuild.
 
----
+The full topic for a given recipient is:
 
-#### Alternative: System Settings
-
-> [!NOTE]
-> This method doesn't work for all users. If this doesn't work, use the Terminal method above.
-
-1. Try to open the app — you'll see a security warning.
-2. Click **OK** to dismiss it.
-3. Open **System Settings** > **Privacy & Security**.
-4. Scroll to the bottom and click **Open Anyway** next to the Boring Notch warning.
-5. Confirm if prompted.
-
----
-
-### Option 2: Install via Homebrew
-
-You can also install using [Homebrew](https://brew.sh). The Homebrew installation automatically bypasses the macOS security warning described above.
-
-```bash
-brew install --cask TheBoredTeam/boring-notch/boring-notch
+```
+nudge-ontora-<recipient-lowercased>-<nonce>
 ```
 
-## Usage
+…which you can also poke from a terminal:
 
-- Launch the app, and voilà—your notch is now the coolest part of your screen.
-- Hover over the notch to see it expand and reveal all its secrets.
-- Use the controls to manage your music like a rockstar.
-- Click the star in your menu bar to customize your notch to your heart's content.
+```bash
+# Ping yourself for testing
+curl -d "Max" -H "Title: Max wants you" \
+    https://ntfy.sh/nudge-ontora-leon-k4n9pq7vx2tm
+```
 
-## 📋 Roadmap
-- [x] Playback live activity 🎧
-- [x] Calendar integration 📆
-- [x] Reminders integration ☑️
-- [x] Mirror 📷
-- [x] Charging indicator and current percentage 🔋
-- [x] Customizable gesture control 👆🏻
-- [x] Shelf functionality with AirDrop 📚
-- [x] Notch sizing customization, finetuning on different display sizes 🖥️
-- [x] System HUD replacements (volume, brightness, backlight) 🎚️💡⌨️
-- [ ] Bluetooth Live Activity (connect/disconnect for bluetooth devices) 
-- [ ] Weather integration ⛅️
-- [ ] Customizable Layout options 🛠️
-- [ ] Lock Screen Widgets 🔒
-- [ ] Extension system 🧩
-- [ ] Notifications (under consideration) 🔔
-<!-- - [ ] Clipboard history manager 📌 `Extension` -->
-<!-- - [ ] Download indicator of different browsers (Safari, Chromium browsers, Firefox) 🌍 `Extension`-->
-<!-- - [ ] Customizable function buttons 🎛️ -->
-<!-- - [ ] App switcher 🪄 -->
+## Build & run
 
-<!-- ## 🧩 Extensions
-> [!NOTE]
-> We’re hard at work on some awesome extensions! Stay tuned, and we’ll keep you updated as soon as they’re released. -->
+**Requirements:** macOS 14 (Sonoma) or later, Xcode 16 or later.
 
-## Building from Source
+```bash
+git clone <this repo>
+cd <repo>
+open boringNotch.xcodeproj
+# In Xcode, hit ⌘R
+```
 
-### Prerequisites
+On first launch:
 
-- **macOS 14 or later**: If you’re not on the latest macOS, we might need to send a search party.
-- **Xcode 16 or later**: This is where the magic happens, so make sure it’s up-to-date.
+1. A 400×600 window appears asking "Who are you? [Max] [Leon] [David]".
+2. Pick your name. Nudge asks for notification permission (used for the
+   backup banner when the notch isn't visible). Grant or skip.
+3. The window closes and your notch becomes the Nudge surface.
 
-### Installation
+That's it. Hover the notch → it expands → tap a teammate's name → they get
+pinged.
 
-1. **Clone the Repository**:
+## Sending a ping
+
+- Hover the notch (or click it).
+- Tap `[Ping <teammate>]`.
+- You'll feel a trackpad haptic and the notch will briefly highlight the
+  pressed button before collapsing.
+
+## Receiving a ping
+
+- Your notch auto-expands and shows the sender's initial + "{sender} wants
+  you" for 6 seconds.
+- A backup macOS notification fires at the same time (toggleable in
+  Settings).
+- A soft "Pop" sound plays (toggleable in Settings).
+
+If you happen to be hovering the notch when a ping arrives, it stays open
+until you move away.
+
+## Settings
+
+Open via the menu bar icon (the wave 👋) → Settings, or `⌘,` while the notch
+has context-menu focus.
+
+The settings window has one pane:
+
+- **Identity** — the three name buttons. Tap to switch identities; the new
+  subscription starts immediately.
+- **Receive behavior** — sound on/off, backup notification on/off.
+- **Shared nonce** — read-only display + copy button. Use this to verify
+  every teammate has the same value.
+
+## Local testing without a teammate
+
+1. Pick "Max" on first launch.
+2. From another terminal, ping yourself as if you were Leon:
    ```bash
-   git clone https://github.com/TheBoredTeam/boring.notch.git
-   cd boring.notch
+   curl -d "Leon" -H "Title: Leon wants you" \
+     https://ntfy.sh/nudge-ontora-max-k4n9pq7vx2tm
    ```
+3. Your notch expands within ~1 second showing "Leon wants you".
 
-2. **Open the Project in Xcode**:
-   ```bash
-   open boringNotch.xcodeproj
-   ```
+To verify the send side, run two debug builds (different `DerivedData`
+or use two laptops), switch one to Leon via Settings, ping from Max.
 
-3. **Build and Run**:
-    - Click the "Run" button or press `Cmd + R`. Watch the magic unfold!
+## What's intentionally not in v1
 
-## 🤝 Contributing
+- Reply / ack channel ("on my way" / "5 min")
+- Custom message text per ping
+- Urgency tiers
+- Auth, accounts, end-to-end encryption
+- More than 3 users
+- App Store distribution, code signing, Sparkle auto-update
 
-We’re all about good vibes and awesome contributions! Read [CONTRIBUTING.md](CONTRIBUTING.md) to learn how you can join the fun!
+## Credits
 
-## Join our Discord Server
+This is a fork of [Boring Notch](https://github.com/TheBoredTeam/boring.notch)
+by The Boring Team — their notch overlay window plumbing, expand/collapse
+animations, and menu bar wiring are doing the heavy lifting here. Nudge keeps
+their `LICENSE` intact and credits them in
+[`THIRD_PARTY_LICENSES`](./THIRD_PARTY_LICENSES).
 
-<a href="https://discord.gg/GvYcYpAKTu" target="_blank"><img src="https://iili.io/28m3GHv.png" alt="Join The Boring Server!" style="height: 60px !important;width: 217px !important;" ></a>
-
-## Star History
-
-<a href="https://www.star-history.com/#TheBoredTeam/boring.notch&Timeline">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=TheBoredTeam/boring.notch&type=Timeline&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=TheBoredTeam/boring.notch&type=Timeline" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=TheBoredTeam/boring.notch&type=Timeline" />
- </picture>
-</a>
-
-## Support us on Ko-fi!
-<!-- <a href="https://www.buymeacoffee.com/jfxh67wvfxq" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-red.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a> -->
-<a href="https://www.ko-fi.com/alexander5015" target="_blank"><img src="https://github.com/user-attachments/assets//a76175ef-7e93-475a-8b67-4922ba5964c2" alt="Support us on Ko-fi" style="height: 70px !important;width: 346px !important;" ></a>
-
-## 🎉 Acknowledgments
-
-We would like to express our gratitude to the authors and maintainers of the open-source projects that made this possible. 
-
-## Notable Projects
-- **[MediaRemoteAdapter](https://github.com/ungive/mediaremote-adapter)** –  An open-source project that allowed us to use the Now Playing source in macOS 15.4+
-- **[NotchDrop](https://github.com/Lakr233/NotchDrop)** – An open-source project that has been instrumental in developing the first version of the "Shelf" feature in Boring Notch.
-
-For a full list of licenses and attributions, please see the [Third-Party Licenses](./THIRD_PARTY_LICENSES.md) file.
-
-### Icon credits: [@maxtron95](https://github.com/maxtron95)
-### Website credits: [@himanshhhhuv](https://github.com/himanshhhhuv)
-
-- **SwiftUI**: For making us look like coding wizards.
-- **You**: For being awesome and checking out **boring.notch**!
-
-
+The notch idea, the team-ping flow, and the surgery to strip Boring Notch
+down to it are ours.

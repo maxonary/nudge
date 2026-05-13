@@ -90,6 +90,12 @@
 		14C08BC12C8E03AD000F8AA0 /* NSImage+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C08BC02C8E03AD000F8AA0 /* NSImage+Extensions.swift */; };
 		14CEF4162C5CAED300855D72 /* boringNotchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14CEF4152C5CAED300855D72 /* boringNotchApp.swift */; };
 		14CEF4182C5CAED300855D72 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14CEF4172C5CAED300855D72 /* ContentView.swift */; };
+		AAA000000000000000000020 /* NudgeConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000010 /* NudgeConstants.swift */; };
+		AAA000000000000000000021 /* NudgeIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000011 /* NudgeIdentity.swift */; };
+		AAA000000000000000000022 /* NudgeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000012 /* NudgeTransport.swift */; };
+		AAA000000000000000000023 /* NudgeNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000013 /* NudgeNotifier.swift */; };
+		AAA000000000000000000024 /* NudgeNotchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000014 /* NudgeNotchView.swift */; };
+		AAA000000000000000000025 /* NudgeIdentityPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000015 /* NudgeIdentityPickerView.swift */; };
 		14CEF41A2C5CAED400855D72 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 14CEF4192C5CAED400855D72 /* Assets.xcassets */; };
 		14CEF41D2C5CAED400855D72 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 14CEF41C2C5CAED400855D72 /* Preview Assets.xcassets */; };
 		14D0321A2C68F32E0096E6A1 /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = 14D032192C68F32E0096E6A1 /* LaunchAtLogin */; };
@@ -259,6 +265,12 @@
 		14CEF4122C5CAED300855D72 /* boringNotch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = boringNotch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		14CEF4152C5CAED300855D72 /* boringNotchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = boringNotchApp.swift; sourceTree = "<group>"; };
 		14CEF4172C5CAED300855D72 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AAA000000000000000000010 /* NudgeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeConstants.swift; sourceTree = "<group>"; };
+		AAA000000000000000000011 /* NudgeIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeIdentity.swift; sourceTree = "<group>"; };
+		AAA000000000000000000012 /* NudgeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeTransport.swift; sourceTree = "<group>"; };
+		AAA000000000000000000013 /* NudgeNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeNotifier.swift; sourceTree = "<group>"; };
+		AAA000000000000000000014 /* NudgeNotchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeNotchView.swift; sourceTree = "<group>"; };
+		AAA000000000000000000015 /* NudgeIdentityPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeIdentityPickerView.swift; sourceTree = "<group>"; };
 		14CEF4192C5CAED400855D72 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		14CEF41C2C5CAED400855D72 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		14CEF41E2C5CAED400855D72 /* boringNotch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = boringNotch.entitlements; sourceTree = "<group>"; };
@@ -561,6 +573,7 @@
 		14CEF4142C5CAED300855D72 /* boringNotch */ = {
 			isa = PBXGroup;
 			children = (
+				AAA000000000000000000030 /* Nudge */,
 				11F748672EC9AC9600F841DB /* XPCHelperClient */,
 				116398942DF5D6B40052E6AF /* Providers */,
 				14288DE22C6E016F00B9F80C /* observers */,
@@ -586,6 +599,19 @@
 				11CC44A12CEE614100C7244B /* BoringViewCoordinator.swift */,
 			);
 			path = boringNotch;
+			sourceTree = "<group>";
+		};
+		AAA000000000000000000030 /* Nudge */ = {
+			isa = PBXGroup;
+			children = (
+				AAA000000000000000000010 /* NudgeConstants.swift */,
+				AAA000000000000000000011 /* NudgeIdentity.swift */,
+				AAA000000000000000000012 /* NudgeTransport.swift */,
+				AAA000000000000000000013 /* NudgeNotifier.swift */,
+				AAA000000000000000000014 /* NudgeNotchView.swift */,
+				AAA000000000000000000015 /* NudgeIdentityPickerView.swift */,
+			);
+			path = Nudge;
 			sourceTree = "<group>";
 		};
 		14CEF41B2C5CAED400855D72 /* Preview Content */ = {
@@ -986,6 +1012,12 @@
 				507266DB2C908E2E00A2D00D /* HoverButton.swift in Sources */,
 				1471A8592C6281BD0058408D /* BoringNotchWindow.swift in Sources */,
 				14CEF4182C5CAED300855D72 /* ContentView.swift in Sources */,
+				AAA000000000000000000020 /* NudgeConstants.swift in Sources */,
+				AAA000000000000000000021 /* NudgeIdentity.swift in Sources */,
+				AAA000000000000000000022 /* NudgeTransport.swift in Sources */,
+				AAA000000000000000000023 /* NudgeNotifier.swift in Sources */,
+				AAA000000000000000000024 /* NudgeNotchView.swift in Sources */,
+				AAA000000000000000000025 /* NudgeIdentityPickerView.swift in Sources */,
 				9A987A0D2C73CA66005CA465 /* ShelfView.swift in Sources */,
 				1132E5142E777B920068732D /* YouTubeMusicNetworking.swift in Sources */,
 				1132E5122E777B6E0068732D /* YouTubeMusicModels.swift in Sources */,
