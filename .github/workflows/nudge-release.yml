@@ -135,50 +135,58 @@ jobs:
           echo "app_path=${DEST}" >> "$GITHUB_OUTPUT"
           echo "Renamed to: ${DEST}"
 
-      - name: Sign nested binaries xcodebuild missed
+      - name: Sign every nested binary inside-out
         env:
           APP_PATH: ${{ steps.rename.outputs.app_path }}
         run: |
           set -euo pipefail
           IDENTITY=$(security find-identity -p codesigning -v | awk -F'"' '/Developer ID Application/{print $2; exit}')
-          echo "Signing nested code with: ${IDENTITY}"
+          echo "Signing with: ${IDENTITY}"
 
           # Preserve the main app's resolved entitlements for the final re-sign
           # (so com.apple.security.network.client survives — ntfy.sh needs it).
           codesign -d --entitlements - --xml "${APP_PATH}" \
             > "$RUNNER_TEMP/main.entitlements" 2>/dev/null || true
 
-          # xcodebuild signs the main app + normal frameworks, but misses
-          # prebuilt-dependency stragglers: Sparkle's deeply-nested Updater.app
-          # and the mediaremote-adapter test-client binary (copied as a plain
-          # resource). Sign every nested bundle/dylib inside-out (deepest path
-          # first) so each gets a Developer ID signature + hardened runtime +
-          # secure timestamp — the three things the notary checks.
-          find "${APP_PATH}/Contents" \
-            \( -name "*.dylib" -o -name "*.xpc" -o -name "*.app" -o -name "*.framework" \) -print \
-            | awk '{ print length, $0 }' | sort -rn | cut -d" " -f2- \
-            | while IFS= read -r item; do
-                echo "  signing ${item}"
-                codesign --force --options runtime --timestamp --sign "${IDENTITY}" "${item}"
-              done
+          sign() {
+            codesign --force --options runtime --timestamp --sign "${IDENTITY}" "$1"
+          }
 
-          # Loose executable Mach-O files copied into Resources (test clients).
-          find "${APP_PATH}/Contents/Resources" -type f -perm -u+x -print 2>/dev/null \
+          # Pass 1: every Mach-O file anywhere in the bundle, deepest path
+          # first. xcodebuild leaves several prebuilt-dependency binaries
+          # unsigned/timestamp-less (Sparkle's Autoupdate, Updater, XPC
+          # services; mediaremote-adapter's test client). Matching by
+          # "is it Mach-O" instead of by name/extension catches them all.
+          find "${APP_PATH}" -type f -print \
             | while IFS= read -r f; do
-                if file "${f}" | grep -q "Mach-O"; then
-                  echo "  signing ${f}"
-                  codesign --force --options runtime --timestamp --sign "${IDENTITY}" "${f}"
+                if file -b "${f}" | grep -q "Mach-O"; then
+                  printf '%s\t%s\n' "${#f}" "${f}"
                 fi
+              done | sort -rn | cut -f2- \
+            | while IFS= read -r bin; do
+                echo "  bin: ${bin}"
+                sign "${bin}"
               done
 
-          # Finally re-seal the outer app, restoring its entitlements.
+          # Pass 2: every bundle wrapper (.app/.framework/.xpc/.bundle),
+          # deepest first, so inner wrappers are sealed before outer ones.
+          find "${APP_PATH}" \( -name "*.app" -o -name "*.framework" -o -name "*.xpc" -o -name "*.bundle" \) -print \
+            | while IFS= read -r b; do
+                [[ "${b}" == "${APP_PATH}" ]] && continue
+                printf '%s\t%s\n' "${#b}" "${b}"
+              done | sort -rn | cut -f2- \
+            | while IFS= read -r wrap; do
+                echo "  wrapper: ${wrap}"
+                sign "${wrap}"
+              done
+
+          # Pass 3: re-seal the outer app, restoring its entitlements.
           if [[ -s "$RUNNER_TEMP/main.entitlements" ]]; then
             codesign --force --options runtime --timestamp \
               --entitlements "$RUNNER_TEMP/main.entitlements" \
               --sign "${IDENTITY}" "${APP_PATH}"
           else
-            codesign --force --options runtime --timestamp \
-              --sign "${IDENTITY}" "${APP_PATH}"
+            codesign --force --options runtime --timestamp --sign "${IDENTITY}" "${APP_PATH}"
           fi
           codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
