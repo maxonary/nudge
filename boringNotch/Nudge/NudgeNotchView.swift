@@ -74,16 +74,16 @@ struct NudgeNotchView: View {
     }
 
     private func incomingView(for ping: NudgePing) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             ZStack {
                 Circle()
                     .fill(Color.accentColor.opacity(0.9))
-                    .frame(width: 36, height: 36)
+                    .frame(width: 26, height: 26)
                 Text(String(ping.sender.prefix(1)))
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .center, spacing: 2) {
                 Text("\(ping.sender) wants you")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
@@ -91,8 +91,17 @@ struct NudgeNotchView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            dismissIncoming()
+        }
+    }
+
+    private func dismissIncoming() {
+        transport.lastIncoming = nil
+        vm.close()
     }
 
     private func tap(_ recipient: String) {
