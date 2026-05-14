@@ -135,19 +135,16 @@ jobs:
           echo "app_path=${DEST}" >> "$GITHUB_OUTPUT"
           echo "Renamed to: ${DEST}"
 
-      - name: Re-sign after rename (Developer ID)
+      - name: Verify signature (no re-sign — trust xcodebuild)
         env:
           APP_PATH: ${{ steps.rename.outputs.app_path }}
         run: |
           set -euo pipefail
-          IDENTITY=$(security find-identity -p codesigning -v | awk -F'"' '/Developer ID Application/{print $2; exit}')
-          if [[ -z "${IDENTITY}" ]]; then
-            echo "::error::No 'Developer ID Application' identity found in keychain"
-            exit 1
-          fi
-          echo "Signing with: ${IDENTITY}"
-          codesign --force --options runtime --timestamp --sign "${IDENTITY}" "${APP_PATH}"
+          # Renaming the .app wrapper does not invalidate the seal, so we do
+          # NOT re-sign here — re-signing the outer bundle can desync nested
+          # code seals and cause notarization to come back Invalid.
           codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+          codesign --display --verbose=4 "${APP_PATH}" 2>&1 | grep -E "Authority|TeamIdentifier|flags" || true
 
       - name: Zip (for notarization)
         id: zip_pre
@@ -174,12 +171,26 @@ jobs:
             echo "::error::APPLE_ID_EMAIL / APPLE_ID_PASSWORD / APPLE_TEAM_ID secrets missing"
             exit 1
           fi
-          xcrun notarytool submit "dist/${ZIP_NAME}" \
+          SUBMIT_JSON=$(xcrun notarytool submit "dist/${ZIP_NAME}" \
             --apple-id "${APPLE_ID_EMAIL}" \
             --password "${APPLE_ID_PASSWORD}" \
             --team-id "${APPLE_TEAM_ID}" \
-            --wait \
-            --timeout 20m
+            --wait --timeout 20m \
+            --output-format json)
+          echo "${SUBMIT_JSON}"
+          SUBMISSION_ID=$(echo "${SUBMIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+          STATUS=$(echo "${SUBMIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')
+          echo "Submission ${SUBMISSION_ID} status: ${STATUS}"
+          # notarytool submit --wait exits 0 even when status is Invalid, so check explicitly.
+          if [[ "${STATUS}" != "Accepted" ]]; then
+            echo "::error::Notarization ${STATUS}. Apple's detailed log:"
+            xcrun notarytool log "${SUBMISSION_ID}" \
+              --apple-id "${APPLE_ID_EMAIL}" \
+              --password "${APPLE_ID_PASSWORD}" \
+              --team-id "${APPLE_TEAM_ID}" \
+              || true
+            exit 1
+          fi
 
       - name: Staple ticket onto the app
         env:
