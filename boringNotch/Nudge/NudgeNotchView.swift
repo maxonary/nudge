@@ -84,7 +84,7 @@ struct NudgeNotchView: View {
                     .foregroundStyle(.white)
             }
             VStack(alignment: .center, spacing: 2) {
-                Text("\(ping.sender) wants to talk")
+                Text("\(ping.sender) is waving")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                 Text(ping.receivedAt.formatted(date: .omitted, time: .shortened))

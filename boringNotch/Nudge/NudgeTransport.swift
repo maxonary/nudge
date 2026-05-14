@@ -33,7 +33,7 @@ final class NudgeTransport: ObservableObject {
         let url = URL(string: "https://ntfy.sh/\(ntfyTopic(for: recipient))")!
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.setValue("\(sender) wants to talk", forHTTPHeaderField: "Title")
+        req.setValue("\(sender) is waving", forHTTPHeaderField: "Title")
         req.httpBody = Data(sender.utf8)
         let (_, resp) = try await URLSession.shared.data(for: req)
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {

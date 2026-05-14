@@ -24,7 +24,7 @@ enum NudgeNotifier {
     static func postBackup(sender: String) {
         guard Defaults[.nudgeShowBackupNotification] else { return }
         let content = UNMutableNotificationContent()
-        content.title = "\(sender) wants to talk"
+        content.title = "\(sender) is waving"
         content.body = "Open Nudge to acknowledge"
         content.interruptionLevel = .timeSensitive
         if Defaults[.nudgePlaySoundOnReceive] {
