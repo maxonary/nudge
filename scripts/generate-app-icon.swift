@@ -40,9 +40,9 @@ func renderIcon(pixels: Int) -> Data {
     let corner = p * 0.225
     let path = NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner)
 
-    // Warm sunset gradient — pairs with the warm tone of the wave emoji.
-    let top = NSColor(red: 1.00, green: 0.83, blue: 0.45, alpha: 1.0)
-    let bottom = NSColor(red: 1.00, green: 0.55, blue: 0.25, alpha: 1.0)
+    // Light sky-blue gradient.
+    let top = NSColor(red: 0.72, green: 0.88, blue: 0.98, alpha: 1.0)
+    let bottom = NSColor(red: 0.35, green: 0.65, blue: 0.92, alpha: 1.0)
     if let gradient = NSGradient(starting: top, ending: bottom) {
         gradient.draw(in: path, angle: 270)
     }
