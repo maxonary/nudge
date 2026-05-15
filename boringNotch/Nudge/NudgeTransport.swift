@@ -30,17 +30,26 @@ final class NudgeTransport: ObservableObject {
     private init() {}
 
     func send(to recipient: String, from sender: String) async throws {
-        let url = URL(string: "https://ntfy.sh/\(ntfyTopic(for: recipient))")!
+        guard let topic = NudgeTeamSecret.shared.topic(for: recipient) else {
+            log.error("send aborted: no team password set")
+            throw URLError(.userAuthenticationRequired)
+        }
+        guard let encryptedBody = NudgeTeamSecret.shared.encrypt(sender) else {
+            log.error("send aborted: encryption failed")
+            throw URLError(.cannotCreateFile)
+        }
+        let url = URL(string: "https://ntfy.sh/\(topic)")!
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.setValue("\(sender) is waving", forHTTPHeaderField: "Title")
-        req.httpBody = Data(sender.utf8)
+        // Generic title — never leak the sender name in cleartext through ntfy.
+        req.setValue("Nudge", forHTTPHeaderField: "Title")
+        req.httpBody = Data(encryptedBody.utf8)
         let (_, resp) = try await URLSession.shared.data(for: req)
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             log.error("send returned \(http.statusCode)")
             throw URLError(.badServerResponse)
         }
-        log.info("sent ping to \(recipient) from \(sender)")
+        log.info("sent ping to \(recipient)")
     }
 
     func startReceiving(as user: String) {
@@ -78,7 +87,10 @@ final class NudgeTransport: ObservableObject {
     }
 
     private func subscribeOnce(user: String) async throws {
-        let url = URL(string: "https://ntfy.sh/\(ntfyTopic(for: user))/sse")!
+        guard let topic = NudgeTeamSecret.shared.topic(for: user) else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        let url = URL(string: "https://ntfy.sh/\(topic)/sse")!
         var req = URLRequest(url: url)
         req.timeoutInterval = 0
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -96,9 +108,14 @@ final class NudgeTransport: ObservableObject {
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let event = json["event"] as? String ?? ""
                 if event != "message" { continue }
-                let sender = (json["message"] as? String)
-                    ?? (json["title"] as? String)
-                    ?? "Someone"
+                guard let messageBody = json["message"] as? String,
+                      let sender = NudgeTeamSecret.shared.decrypt(messageBody) else {
+                    // Silently drop messages we can't decrypt (different
+                    // password, corrupted payload, etc.) so we don't
+                    // surface garbage as a ping.
+                    log.info("dropping undecryptable message")
+                    continue
+                }
                 await MainActor.run {
                     self.lastIncoming = NudgePing(sender: sender, receivedAt: Date())
                 }

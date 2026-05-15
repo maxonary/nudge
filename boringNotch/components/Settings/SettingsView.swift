@@ -12,15 +12,16 @@ struct SettingsView: View {
         NavigationStack {
             NudgeSettingsPane()
         }
-        .frame(width: 540, height: 480)
+        .frame(width: 540, height: 520)
     }
 }
 
 struct NudgeSettingsPane: View {
     @ObservedObject var identity = NudgeIdentity.shared
+    @ObservedObject var teamSecret = NudgeTeamSecret.shared
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
-    @State private var copiedNonce: Bool = false
+    @State private var showingPasswordSheet: Bool = false
 
     var body: some View {
         Form {
@@ -53,6 +54,29 @@ struct NudgeSettingsPane: View {
             }
 
             Section {
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    if teamSecret.hasPassword {
+                        Label("Set", systemImage: "lock.fill")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Label("Not set — pings won't work", systemImage: "lock.open.fill")
+                            .foregroundStyle(.red)
+                    }
+                }
+                Button("Change password…") {
+                    showingPasswordSheet = true
+                }
+            } header: {
+                Text("Team password")
+            } footer: {
+                Text("Everyone on your team must type the same password. It encrypts your pings end-to-end and decides who can reach you. Stored in Keychain, never sent over the network.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Toggle("Play sound on receive", isOn: $playSoundOnReceive)
                 Toggle("Show macOS notification (fallback)", isOn: $showBackupNotification)
             } header: {
@@ -60,33 +84,7 @@ struct NudgeSettingsPane: View {
             }
 
             Section {
-                HStack {
-                    Text("Topic nonce")
-                        .frame(width: 120, alignment: .leading)
-                    Text(nudgeNonce)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                    Spacer()
-                    Button(copiedNonce ? "Copied!" : "Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(nudgeNonce, forType: .string)
-                        copiedNonce = true
-                        Task {
-                            try? await Task.sleep(nanoseconds: 1_500_000_000)
-                            await MainActor.run { copiedNonce = false }
-                        }
-                    }
-                }
-            } header: {
-                Text("Shared nonce")
-            } footer: {
-                Text("All Ontora teammates' builds must have the exact same nonce. Rotate by editing NudgeConstants.swift and shipping a new build to everyone.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Text("Nudge sends a hand-raise ping through ntfy.sh under a topic derived from the recipient's name + the shared nonce. No backend, no accounts, no message contents (just \"X wants you\"). When someone pings you, your notch expands for ~6 seconds; a macOS notification fires as a backup in case the notch is off-screen.")
+                Text("Nudge sends an encrypted hand-wave through ntfy.sh under a topic derived from your team password. No backend, no accounts, no plaintext on the wire. When someone pings you, your notch expands for ~6 seconds; a macOS notification fires as a backup in case the notch is off-screen.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -96,6 +94,11 @@ struct NudgeSettingsPane: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Nudge")
+        .sheet(isPresented: $showingPasswordSheet) {
+            NudgePasswordPickerView {
+                showingPasswordSheet = false
+            }
+        }
     }
 }
 

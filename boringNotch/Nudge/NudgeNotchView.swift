@@ -9,6 +9,7 @@ import AppKit
 struct NudgeNotchView: View {
     @ObservedObject var transport: NudgeTransport = .shared
     @ObservedObject var identity: NudgeIdentity = .shared
+    @ObservedObject var teamSecret: NudgeTeamSecret = .shared
     @EnvironmentObject var vm: BoringViewModel
 
     @State private var sending: String?
@@ -32,6 +33,10 @@ struct NudgeNotchView: View {
         HStack(spacing: 10) {
             if identity.current == nil {
                 Text("Pick a name in Settings")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else if !teamSecret.hasPassword {
+                Text("Set team password in Settings")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else if identity.others.isEmpty {

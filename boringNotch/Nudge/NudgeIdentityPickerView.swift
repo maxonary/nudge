@@ -64,7 +64,8 @@ struct NudgeIdentityPickerView: View {
         Task {
             await NudgeNotifier.requestAuthorization()
         }
-        BoringViewCoordinator.shared.firstLaunch = false
+        // firstLaunch flips to false only after the team password is
+        // also set (in NudgePasswordPickerView).
         onFinish()
     }
 }

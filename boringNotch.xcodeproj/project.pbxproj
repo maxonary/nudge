@@ -121,6 +121,8 @@
 		AAA000000000000000000023 /* NudgeNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000013 /* NudgeNotifier.swift */; };
 		AAA000000000000000000024 /* NudgeNotchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000014 /* NudgeNotchView.swift */; };
 		AAA000000000000000000025 /* NudgeIdentityPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000015 /* NudgeIdentityPickerView.swift */; };
+		AAA000000000000000000026 /* NudgeTeamSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000016 /* NudgeTeamSecret.swift */; };
+		AAA000000000000000000027 /* NudgePasswordPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000017 /* NudgePasswordPickerView.swift */; };
 		B10348D92C74E56000475897 /* ConditionalModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10348D82C74E56000475897 /* ConditionalModifier.swift */; };
 		B10F84A32C6C9596009F3026 /* TestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10F84A22C6C9596009F3026 /* TestView.swift */; };
 		B141C2412CA5F53F00AC8CC8 /* SparkleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B141C2402CA5F53E00AC8CC8 /* SparkleView.swift */; };
@@ -296,6 +298,8 @@
 		AAA000000000000000000013 /* NudgeNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeNotifier.swift; sourceTree = "<group>"; };
 		AAA000000000000000000014 /* NudgeNotchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeNotchView.swift; sourceTree = "<group>"; };
 		AAA000000000000000000015 /* NudgeIdentityPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeIdentityPickerView.swift; sourceTree = "<group>"; };
+		AAA000000000000000000016 /* NudgeTeamSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeTeamSecret.swift; sourceTree = "<group>"; };
+		AAA000000000000000000017 /* NudgePasswordPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgePasswordPickerView.swift; sourceTree = "<group>"; };
 		B10348D82C74E56000475897 /* ConditionalModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConditionalModifier.swift; sourceTree = "<group>"; };
 		B10F84A22C6C9596009F3026 /* TestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestView.swift; sourceTree = "<group>"; };
 		B141C2402CA5F53E00AC8CC8 /* SparkleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleView.swift; sourceTree = "<group>"; };
@@ -680,6 +684,8 @@
 				AAA000000000000000000013 /* NudgeNotifier.swift */,
 				AAA000000000000000000014 /* NudgeNotchView.swift */,
 				AAA000000000000000000015 /* NudgeIdentityPickerView.swift */,
+				AAA000000000000000000016 /* NudgeTeamSecret.swift */,
+				AAA000000000000000000017 /* NudgePasswordPickerView.swift */,
 			);
 			path = Nudge;
 			sourceTree = "<group>";
@@ -1018,6 +1024,8 @@
 				AAA000000000000000000023 /* NudgeNotifier.swift in Sources */,
 				AAA000000000000000000024 /* NudgeNotchView.swift in Sources */,
 				AAA000000000000000000025 /* NudgeIdentityPickerView.swift in Sources */,
+				AAA000000000000000000026 /* NudgeTeamSecret.swift in Sources */,
+				AAA000000000000000000027 /* NudgePasswordPickerView.swift in Sources */,
 				9A987A0D2C73CA66005CA465 /* ShelfView.swift in Sources */,
 				1132E5142E777B920068732D /* YouTubeMusicNetworking.swift in Sources */,
 				1132E5122E777B6E0068732D /* YouTubeMusicModels.swift in Sources */,

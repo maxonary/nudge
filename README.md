@@ -12,10 +12,10 @@ room feels insane. So the only way to get their attention has been to stand
 up and tap them on the shoulder, which kills your own focus too.
 
 Nudge fixes that: a glanceable signal in the MacBook notch. Click your notch,
-pick a teammate, their notch expands for ~6 seconds with `{sender} wants you`.
+pick a teammate, their notch expands for ~6 seconds with `{sender} is waving`.
 A backup macOS notification fires in case the notch is off-screen (external
-monitor, full-screen window). No backend, no accounts, no message text —
-just the ping.
+monitor, full-screen window). No backend, no accounts, just an encrypted
+hand-wave over a public pub/sub.
 
 The friction of "I have to move the cursor to my notch to ping you" is a
 feature, not a bug. It filters out interruptions that aren't worth the cost.
@@ -24,36 +24,27 @@ Nudge is a fork of [Boring Notch](https://github.com/TheBoredTeam/boring.notch).
 Everything that doesn't serve the team-ping flow is disabled in this build;
 see `TODO_V2_CLEANUP.md` for the dormant code still on disk.
 
-## The shared topic nonce
+## The team password
 
 The transport is [ntfy.sh](https://ntfy.sh) — a public, free, no-account pub/sub
-service. Each user subscribes to a topic derived from their name plus a
-shared 12-char lowercase nonce. The nonce is the only thing that keeps random
-people on the internet from being able to ping us.
+service. Anyone can subscribe to or post to any topic if they know its name.
+So we use a shared **team password** to do two things:
 
-The current nonce (baked into the build, read from `boringNotch/Nudge/NudgeConstants.swift`):
+1. **Derive the topic** — `nudge-ontora-<name>-<12 hex chars of HKDF(password, info="topic")>`.
+   Without the password you can't compute the topic, so you can't even find
+   the right pub/sub stream to listen on or send to.
+2. **Encrypt the payload** — the sender's name is AES-GCM encrypted with a
+   key derived from the same password (HKDF with a different `info` tag).
+   Even if someone learns the topic, they see ciphertext.
 
-```
-k4n9pq7vx2tm
-```
+The password is entered on first launch and stored only in the macOS
+Keychain — never in the repo, never sent over the network. Everyone on
+your team types the same one. To rotate it: change it in Settings →
+Team password and have your teammates do the same.
 
-**Every Ontora teammate's build MUST have the same nonce.** To rotate it:
-edit `nudgeNonce` in `NudgeConstants.swift`, commit, and have everyone pull
-and rebuild.
-
-The full topic for a given recipient is:
-
-```
-nudge-ontora-<recipient-lowercased>-<nonce>
-```
-
-…which you can also poke from a terminal:
-
-```bash
-# Ping yourself for testing
-curl -d "Max" -H "Title: Max wants you" \
-    https://ntfy.sh/nudge-ontora-leon-k4n9pq7vx2tm
-```
+If two people enter different passwords they're silently on different
+topics and won't reach each other — there's no backend to warn you, so
+ping yourself to test after any change.
 
 ## Build & run
 
@@ -69,9 +60,9 @@ open boringNotch.xcodeproj
 On first launch:
 
 1. A 400×600 window appears asking "Who are you? [Max] [Leon] [David]".
-2. Pick your name. Nudge asks for notification permission (used for the
-   backup banner when the notch isn't visible). Grant or skip.
-3. The window closes and your notch becomes the Nudge surface.
+2. Pick your name. Nudge asks for notification permission. Grant or skip.
+3. Enter the **team password** (the same string everyone else types).
+4. The window closes and your notch becomes the Nudge surface.
 
 That's it. Hover the notch → it expands → tap a teammate's name → they get
 pinged.
@@ -103,31 +94,29 @@ The settings window has one pane:
 
 - **Identity** — the three name buttons. Tap to switch identities; the new
   subscription starts immediately.
+- **Team password** — status + "Change password…" button.
 - **Receive behavior** — sound on/off, backup notification on/off.
-- **Shared nonce** — read-only display + copy button. Use this to verify
-  every teammate has the same value.
 
 ## Local testing without a teammate
 
-1. Pick "Max" on first launch.
-2. From another terminal, ping yourself as if you were Leon:
-   ```bash
-   curl -d "Leon" -H "Title: Leon wants you" \
-     https://ntfy.sh/nudge-ontora-max-k4n9pq7vx2tm
-   ```
-3. Your notch expands within ~1 second showing "Leon wants you".
+Run the app, pick "Max", set a team password. From the same Mac, you can
+ping yourself as if you were Leon — but you'd need to compute the
+encrypted payload, which is fiddly from a terminal. Easier: temporarily
+switch your identity to Leon in Settings, then back to Max — the
+subscription resubscribes immediately, and you can also send pings to
+yourself by switching back and forth.
 
-To verify the send side, run two debug builds (different `DerivedData`
-or use two laptops), switch one to Leon via Settings, ping from Max.
+(With v0.2.x's plaintext payload this was a one-line `curl`; now that
+payloads are AES-GCM encrypted, terminal pinging would need a small
+script. Out of scope for v1 of the encryption work.)
 
-## What's intentionally not in v1
+## What's intentionally not in this build
 
 - Reply / ack channel ("on my way" / "5 min")
 - Custom message text per ping
 - Urgency tiers
-- Auth, accounts, end-to-end encryption
 - More than 3 users
-- App Store distribution, code signing, Sparkle auto-update
+- App Store distribution, Sparkle auto-update
 
 ## Credits
 

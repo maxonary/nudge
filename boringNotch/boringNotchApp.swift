@@ -18,33 +18,29 @@ struct DynamicNotchApp: App {
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
     @ObservedObject var identity = NudgeIdentity.shared
+    @ObservedObject var teamSecret = NudgeTeamSecret.shared
     @Environment(\.openWindow) var openWindow
 
     var body: some Scene {
         MenuBarExtra("Nudge", systemImage: "hand.wave.fill", isInserted: $showMenuBarIcon) {
             if let me = identity.current {
                 Text("You are: \(me)")
-                Button("Switch user…") {
-                    DispatchQueue.main.async {
-                        appDelegate.showIdentityPicker()
-                    }
-                }
             } else {
-                Button("Pick your name…") {
-                    DispatchQueue.main.async {
-                        appDelegate.showIdentityPicker()
-                    }
+                Text("Identity: not set")
+            }
+            if teamSecret.hasPassword {
+                Text("Team password: set ✓")
+            } else {
+                Text("Team password: NOT set")
+            }
+            Button("Open onboarding…") {
+                DispatchQueue.main.async {
+                    appDelegate.showOnboarding()
                 }
             }
             Divider()
             Toggle("Play sound on receive", isOn: $playSoundOnReceive)
             Toggle("Show macOS notification", isOn: $showBackupNotification)
-            Divider()
-            Text("Topic nonce: \(nudgeNonce)")
-            Button("Copy nonce") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(nudgeNonce, forType: .string)
-            }
             Divider()
             Button("Settings") {
                 DispatchQueue.main.async {
@@ -327,20 +323,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             adjustWindowPosition(changeAlpha: true)
         }
 
-        // Start Nudge transport when an identity is set; stop when cleared.
-        identityCancellable = NudgeIdentity.shared.$current
-            .receive(on: RunLoop.main)
-            .sink { user in
-                if let user {
-                    NudgeTransport.shared.startReceiving(as: user)
-                } else {
-                    NudgeTransport.shared.stopReceiving()
-                }
+        // Start Nudge transport only when BOTH identity and team password
+        // are present; stop whenever either is missing.
+        identityCancellable = Publishers.CombineLatest(
+            NudgeIdentity.shared.$current,
+            NudgeTeamSecret.shared.$hasPassword
+        )
+        .receive(on: RunLoop.main)
+        .sink { user, hasPwd in
+            if let user, hasPwd {
+                NudgeTransport.shared.startReceiving(as: user)
+            } else {
+                NudgeTransport.shared.stopReceiving()
             }
+        }
 
+        // Resume onboarding at whichever step is missing.
         if NudgeIdentity.shared.current == nil {
             DispatchQueue.main.async { [weak self] in
-                self?.showOnboardingWindow()
+                self?.showOnboardingWindow(step: .identity)
+            }
+        } else if !NudgeTeamSecret.shared.hasPassword {
+            DispatchQueue.main.async { [weak self] in
+                self?.showOnboardingWindow(step: .password)
             }
         }
 
@@ -348,8 +353,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    func showIdentityPicker() {
-        showOnboardingWindow()
+    func showOnboarding() {
+        // Pick the right step based on what's missing.
+        let step: OnboardingStep
+        if NudgeIdentity.shared.current == nil {
+            step = .identity
+        } else if !NudgeTeamSecret.shared.hasPassword {
+            step = .password
+        } else {
+            step = .identity
+        }
+        showOnboardingWindow(step: step)
     }
 
     func deviceHasNotch() -> Bool {
