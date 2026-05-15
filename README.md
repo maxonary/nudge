@@ -1,21 +1,19 @@
 # Nudge
 
-<img width="687" height="440" alt="Bildschirmfoto 2026-05-14 um 22 55 04" src="https://github.com/user-attachments/assets/afe4e9ac-8836-48b6-a04a-db084491adbb" />
-
 Glanceable "raise hand" signal between Ontora founders that pierces noise-cancelling
 headphones without forcing anyone to physically get up.
 
-
-https://github.com/user-attachments/assets/dfe08808-3287-4531-882b-e5c38b27d68b
-
+<img width="1300" height="710" alt="Nudge Giff" src="https://github.com/user-attachments/assets/63198e78-cd57-4d78-873b-60f4fef360e2" />
 
 ## Backstory
 
-Ontora is a 3-founder YC X26 startup (Max, Leon, David) sharing a room in
+Ontora is a 3-founder YC P26 startup (Max, Leon, David) sharing a room in
 San Francisco. Leon and David both wear noise-cancelling headphones for deep
 work. Slack and WhatsApp don't pierce headphones. Calling someone in the same
 room feels insane. So the only way to get their attention has been to stand
 up and tap them on the shoulder, which kills your own focus too.
+
+<img width="687" height="440" alt="Bildschirmfoto 2026-05-14 um 22 55 04" src="https://github.com/user-attachments/assets/afe4e9ac-8836-48b6-a04a-db084491adbb" />
 
 Nudge fixes that: a glanceable signal in the MacBook notch. Click your notch,
 pick a teammate, their notch expands for ~6 seconds with `{sender} wants you`.
