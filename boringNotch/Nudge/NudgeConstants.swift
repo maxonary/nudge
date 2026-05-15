@@ -5,7 +5,8 @@
 
 import Foundation
 
-// The ntfy topic is derived from the team password (NudgeTeamSecret).
-// No baked-in secret lives here any more.
+// Names are no longer hardcoded — users type their own during onboarding,
+// and the roster auto-discovers teammates via "hello" broadcasts on the
+// shared team topic.
 
-let nudgeUsers: [String] = ["Max", "Leon", "David"]
+let nudgeMaxNameLength = 32

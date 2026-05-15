@@ -40,10 +40,21 @@ final class NudgeTeamSecret: ObservableObject {
     func setPassword(_ pw: String) {
         let trimmed = pw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let previous = readPassword()
         writePassword(trimmed)
         derive(from: trimmed)
         hasPassword = true
         log.info("team password set")
+        if previous != trimmed {
+            // Joined (or rejoined under a new password) a different team —
+            // the old roster came from a different topic and is stale.
+            NudgeRoster.shared.clear()
+            // Force resubscription on the new topic.
+            if let me = NudgeIdentity.shared.current {
+                NudgeTransport.shared.stopReceiving()
+                NudgeTransport.shared.startReceiving(as: me)
+            }
+        }
     }
 
     func clearPassword() {
@@ -61,11 +72,12 @@ final class NudgeTeamSecret: ObservableObject {
 
     // MARK: - Derived values
 
-    /// `nudge-ontora-<user>-<12 hex chars derived from password>`.
+    /// `nudge-team-<12 hex chars derived from password>`. One topic for
+    /// the whole team — recipient name moves into the encrypted payload.
     /// Returns nil if no password set.
-    func topic(for user: String) -> String? {
+    var teamTopic: String? {
         guard let nonce = cachedNonce else { return nil }
-        return "nudge-ontora-\(user.lowercased())-\(nonce)"
+        return "nudge-team-\(nonce)"
     }
 
     func encrypt(_ plaintext: String) -> String? {

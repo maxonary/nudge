@@ -30,10 +30,10 @@ The transport is [ntfy.sh](https://ntfy.sh) — a public, free, no-account pub/s
 service. Anyone can subscribe to or post to any topic if they know its name.
 So we use a shared **team password** to do two things:
 
-1. **Derive the topic** — `nudge-ontora-<name>-<12 hex chars of HKDF(password, info="topic")>`.
-   Without the password you can't compute the topic, so you can't even find
-   the right pub/sub stream to listen on or send to.
-2. **Encrypt the payload** — the sender's name is AES-GCM encrypted with a
+1. **Derive the team topic** — `nudge-team-<12 hex chars of HKDF(password, info="topic")>`.
+   One topic for the whole team. Without the password you can't compute it,
+   so you can't find the pub/sub stream to listen on or send to.
+2. **Encrypt every payload** — message bodies are AES-GCM encrypted with a
    key derived from the same password (HKDF with a different `info` tag).
    Even if someone learns the topic, they see ciphertext.
 
@@ -44,7 +44,18 @@ Team password and have your teammates do the same.
 
 If two people enter different passwords they're silently on different
 topics and won't reach each other — there's no backend to warn you, so
-ping yourself to test after any change.
+nudge yourself to test after any change.
+
+## How teammates discover each other
+
+There's no roster file. When you launch the app with a name and password
+set, you post a tiny encrypted `{type:"hello", sender:"<you>"}` to the
+shared team topic, and refresh it every ~30 minutes. Teammates already on
+the team see your hello and add you to their local roster — that's what
+populates the ping buttons in their notch and the leaderboard rows in
+their Settings. Onboarding a new teammate is just "install app → type
+your name → type the team password." Within a couple of seconds the team
+has discovered you, and you've discovered them.
 
 ## Build & run
 
@@ -59,8 +70,9 @@ open boringNotch.xcodeproj
 
 On first launch:
 
-1. A 400×600 window appears asking "Who are you? [Max] [Leon] [David]".
-2. Pick your name. Nudge asks for notification permission. Grant or skip.
+1. A 400×600 window appears asking "What's your name?" — type whatever
+   you want your teammates to see (1–32 chars, no colons).
+2. Nudge asks for notification permission. Grant or skip.
 3. Enter the **team password** (the same string everyone else types).
 4. The window closes and your notch becomes the Nudge surface.
 

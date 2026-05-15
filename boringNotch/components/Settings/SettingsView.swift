@@ -12,7 +12,7 @@ struct SettingsView: View {
         NavigationStack {
             NudgeSettingsPane()
         }
-        .frame(width: 540, height: 520)
+        .frame(width: 540, height: 600)
     }
 }
 
@@ -20,36 +20,36 @@ struct NudgeSettingsPane: View {
     @ObservedObject var identity = NudgeIdentity.shared
     @ObservedObject var teamSecret = NudgeTeamSecret.shared
     @ObservedObject var stats = NudgeStats.shared
+    @ObservedObject var roster = NudgeRoster.shared
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
+
+    @State private var nameDraft: String = NudgeIdentity.shared.current ?? ""
+    @State private var nameError: String?
     @State private var showingPasswordSheet: Bool = false
 
     var body: some View {
         Form {
             Section {
                 HStack {
-                    Text("Current user")
-                    Spacer()
-                    Text(identity.current ?? "—")
-                        .foregroundStyle(.secondary)
+                    TextField("Your name", text: $nameDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(saveName)
+                    Button("Save", action: saveName)
+                        .disabled(
+                            !NudgeIdentity.isValid(NudgeIdentity.sanitize(nameDraft)) ||
+                            NudgeIdentity.sanitize(nameDraft) == identity.current
+                        )
                 }
-                HStack {
-                    ForEach(nudgeUsers, id: \.self) { user in
-                        Button {
-                            identity.setCurrent(user)
-                        } label: {
-                            Text(user)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(identity.current == user ? .accentColor : .secondary)
-                    }
+                if let err = nameError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             } header: {
                 Text("Identity")
             } footer: {
-                Text("Pick who you are. Every Ontora teammate's build runs this app.")
+                Text("This is what teammates see on their notch when you nudge them. 1–\(nudgeMaxNameLength) characters, no colons.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -72,7 +72,36 @@ struct NudgeSettingsPane: View {
             } header: {
                 Text("Team password")
             } footer: {
-                Text("Everyone on your team must type the same password. It encrypts your pings end-to-end and decides who can reach you. Stored in Keychain, never sent over the network.")
+                Text("Everyone on your team must type the same password. It encrypts your pings and decides who's on the same team. Stored in Keychain, never sent over the network.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                let others = roster.others(excluding: identity.current)
+                if others.isEmpty {
+                    Text("No teammates seen yet. Send or wait for a hello — you'll appear here within a minute or two.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(others, id: \.self) { name in
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .foregroundStyle(.secondary)
+                            Text(name)
+                            Spacer()
+                            if let seen = roster.teammates[name] {
+                                Text(seen.formatted(.relative(presentation: .named)))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Known teammates")
+            } footer: {
+                Text("People who have said hello on this team password. Auto-refreshes every ~30 minutes per teammate.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -155,7 +184,7 @@ struct NudgeSettingsPane: View {
             }
 
             Section {
-                Text("Nudge sends an encrypted hand-wave through ntfy.sh under a topic derived from your team password. No backend, no accounts, no plaintext on the wire. When someone pings you, your notch expands for ~6 seconds; a macOS notification fires as a backup in case the notch is off-screen.")
+                Text("Nudge sends an encrypted hand-wave through ntfy.sh on a topic derived from your team password. The whole team shares one topic and decodes the same payloads; recipients filter pings addressed to them. No backend, no accounts, no plaintext on the wire.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -170,6 +199,19 @@ struct NudgeSettingsPane: View {
                 showingPasswordSheet = false
             }
         }
+        .onChange(of: identity.current) { _, newValue in
+            nameDraft = newValue ?? ""
+        }
+    }
+
+    private func saveName() {
+        let cleaned = NudgeIdentity.sanitize(nameDraft)
+        guard NudgeIdentity.isValid(cleaned) else {
+            nameError = "1–\(nudgeMaxNameLength) characters, no colons."
+            return
+        }
+        nameError = nil
+        identity.setCurrent(cleaned)
     }
 }
 

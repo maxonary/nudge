@@ -2,6 +2,15 @@
 //  NudgeTransport.swift
 //  Nudge
 //
+//  Single shared ntfy topic for the whole team (derived from password).
+//  Every member subscribes; every message is encrypted with the team key.
+//  Two message types travel on this topic:
+//
+//    - "hello": "I'm <name>, I'm online" — broadcasts your existence so
+//      teammates can populate their roster without prior coordination.
+//    - "ping" : "<sender> nudges <to>" — the actual wave. Receivers ignore
+//      pings whose `to` doesn't match their own identity.
+//
 
 import Foundation
 import Combine
@@ -13,18 +22,20 @@ struct NudgePing: Equatable {
     let receivedAt: Date
 }
 
-/// Wire payload carried inside the AES-GCM-encrypted body. We extend the
-/// raw sender-name string with the sender's own weekly send count so
-/// receivers can build a cross-team leaderboard without a backend.
+/// Wire payload (v2). Carried inside the AES-GCM-encrypted body.
 private struct NudgePayload: Codable {
     let v: Int
+    let type: String            // "ping" | "hello"
     let sender: String
+    let to: String?             // present only on type=="ping"
     let weekSends: Int
 
-    init(sender: String, weekSends: Int) {
-        self.v = 1
-        self.sender = sender
-        self.weekSends = weekSends
+    static func ping(from sender: String, to recipient: String, weekSends: Int) -> NudgePayload {
+        NudgePayload(v: 2, type: "ping", sender: sender, to: recipient, weekSends: weekSends)
+    }
+
+    static func hello(from sender: String, weekSends: Int) -> NudgePayload {
+        NudgePayload(v: 2, type: "hello", sender: sender, to: nil, weekSends: weekSends)
     }
 }
 
@@ -36,63 +47,66 @@ final class NudgeTransport: ObservableObject {
 
     private let log = Logger(subsystem: "com.ontora.nudge", category: "transport")
     private var receiveTask: Task<Void, Never>?
-    private var currentSubscribedUser: String?
+    private var heartbeatTask: Task<Void, Never>?
+    private var currentUser: String?
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "com.ontora.nudge.path")
     private var lastPathStatus: NWPath.Status = .requiresConnection
     private var pathMonitorStarted = false
 
+    /// How often each user broadcasts a fresh "hello" so that rosters
+    /// converge even after sleep / network changes.
+    private let heartbeatInterval: TimeInterval = 30 * 60
+
     private init() {}
 
+    // MARK: - Public
+
     func send(to recipient: String, from sender: String) async throws {
-        guard let topic = NudgeTeamSecret.shared.topic(for: recipient) else {
+        guard let topic = NudgeTeamSecret.shared.teamTopic else {
             log.error("send aborted: no team password set")
             throw URLError(.userAuthenticationRequired)
         }
 
         // Increment first so the count we broadcast already includes this ping.
         NudgeStats.shared.recordSent(to: recipient)
-        let payload = NudgePayload(
-            sender: sender,
+        let payload = NudgePayload.ping(
+            from: sender,
+            to: recipient,
             weekSends: NudgeStats.shared.mySendsThisWeek
         )
-        guard let payloadData = try? JSONEncoder().encode(payload),
-              let payloadStr = String(data: payloadData, encoding: .utf8),
-              let encryptedBody = NudgeTeamSecret.shared.encrypt(payloadStr) else {
-            log.error("send aborted: payload encode/encryption failed")
-            throw URLError(.cannotCreateFile)
-        }
-
-        let url = URL(string: "https://ntfy.sh/\(topic)")!
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        // Generic title — never leak the sender name in cleartext through ntfy.
-        req.setValue("Nudge", forHTTPHeaderField: "Title")
-        req.httpBody = Data(encryptedBody.utf8)
-        let (_, resp) = try await URLSession.shared.data(for: req)
-        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            log.error("send returned \(http.statusCode)")
-            throw URLError(.badServerResponse)
-        }
-        log.info("sent ping to \(recipient)")
+        try await post(payload: payload, to: topic, label: "ping->\(recipient)")
     }
 
     func startReceiving(as user: String) {
-        if currentSubscribedUser == user, receiveTask != nil { return }
+        if currentUser == user, receiveTask != nil { return }
         stopReceiving()
-        currentSubscribedUser = user
-        log.info("starting subscription for \(user)")
+        currentUser = user
+        log.info("starting team subscription for \(user)")
         startPathMonitorIfNeeded()
+
         receiveTask = Task { [weak self] in
             await self?.subscribeLoop(user: user)
+        }
+
+        // Announce yourself immediately and on a heartbeat.
+        Task { [weak self] in
+            await self?.sendHello(as: user)
+        }
+        heartbeatTask = Task { [weak self] in
+            await self?.heartbeatLoop(user: user)
         }
     }
 
     func stopReceiving() {
         receiveTask?.cancel()
         receiveTask = nil
-        currentSubscribedUser = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        currentUser = nil
     }
+
+    // MARK: - Subscribe
 
     private func subscribeLoop(user: String) async {
         var backoff: UInt64 = 1
@@ -112,7 +126,7 @@ final class NudgeTransport: ObservableObject {
     }
 
     private func subscribeOnce(user: String) async throws {
-        guard let topic = NudgeTeamSecret.shared.topic(for: user) else {
+        guard let topic = NudgeTeamSecret.shared.teamTopic else {
             throw URLError(.userAuthenticationRequired)
         }
         let url = URL(string: "https://ntfy.sh/\(topic)/sse")!
@@ -123,43 +137,95 @@ final class NudgeTransport: ObservableObject {
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        log.info("SSE connected for \(user)")
+        log.info("SSE connected for team topic")
+
         for try await line in bytes.lines {
             if Task.isCancelled { break }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("data:") else { continue }
-            let payload = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-            guard let data = payload.data(using: .utf8) else { continue }
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let event = json["event"] as? String ?? ""
-                if event != "message" { continue }
-                guard let messageBody = json["message"] as? String,
-                      let plaintext = NudgeTeamSecret.shared.decrypt(messageBody) else {
-                    // Silently drop messages we can't decrypt (different
-                    // password, corrupted payload, etc.) so we don't
-                    // surface garbage as a ping.
-                    log.info("dropping undecryptable message")
-                    continue
-                }
-                // Try v1 JSON payload first; fall back to plain-string format
-                // from v0.3.0–v0.3.2 builds.
-                let senderName: String
-                let reportedWeekSends: Int
-                if let pdata = plaintext.data(using: .utf8),
-                   let payload = try? JSONDecoder().decode(NudgePayload.self, from: pdata) {
-                    senderName = payload.sender
-                    reportedWeekSends = payload.weekSends
-                } else {
-                    senderName = plaintext
-                    reportedWeekSends = 0
-                }
-                await MainActor.run {
-                    NudgeStats.shared.recordReceived(from: senderName)
-                    NudgeStats.shared.recordPeerLeaderboard(peer: senderName, weekSends: reportedWeekSends)
-                    self.lastIncoming = NudgePing(sender: senderName, receivedAt: Date())
-                }
+            let raw = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            guard let json = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                  (json["event"] as? String) == "message",
+                  let messageBody = json["message"] as? String,
+                  let plaintext = NudgeTeamSecret.shared.decrypt(messageBody),
+                  let pdata = plaintext.data(using: .utf8),
+                  let payload = try? JSONDecoder().decode(NudgePayload.self, from: pdata) else {
+                continue
             }
+            await handle(payload: payload, myUser: user)
         }
+    }
+
+    private func handle(payload: NudgePayload, myUser: String) async {
+        // Anyone we hear from goes into the roster.
+        NudgeRoster.shared.record(name: payload.sender)
+
+        switch payload.type {
+        case "hello":
+            if payload.weekSends > 0 {
+                NudgeStats.shared.recordPeerLeaderboard(
+                    peer: payload.sender,
+                    weekSends: payload.weekSends
+                )
+            }
+        case "ping":
+            // Ignore pings addressed to other people. Also ignore your
+            // own loopback (you'd see your own broadcast otherwise).
+            guard let to = payload.to,
+                  to == myUser,
+                  payload.sender != myUser else { return }
+            NudgeStats.shared.recordReceived(from: payload.sender)
+            NudgeStats.shared.recordPeerLeaderboard(
+                peer: payload.sender,
+                weekSends: payload.weekSends
+            )
+            self.lastIncoming = NudgePing(sender: payload.sender, receivedAt: Date())
+        default:
+            log.info("ignoring unknown payload type: \(payload.type)")
+        }
+    }
+
+    // MARK: - Hello / heartbeat
+
+    private func sendHello(as user: String) async {
+        guard let topic = NudgeTeamSecret.shared.teamTopic else { return }
+        let payload = NudgePayload.hello(from: user, weekSends: NudgeStats.shared.mySendsThisWeek)
+        do {
+            try await post(payload: payload, to: topic, label: "hello")
+        } catch {
+            log.error("hello send failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func heartbeatLoop(user: String) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: UInt64(heartbeatInterval) * 1_000_000_000)
+            if Task.isCancelled { return }
+            await sendHello(as: user)
+        }
+    }
+
+    // MARK: - HTTP helper
+
+    private func post(payload: NudgePayload, to topic: String, label: String) async throws {
+        guard let data = try? JSONEncoder().encode(payload),
+              let str = String(data: data, encoding: .utf8),
+              let body = NudgeTeamSecret.shared.encrypt(str) else {
+            log.error("\(label): payload encode/encryption failed")
+            throw URLError(.cannotCreateFile)
+        }
+        let url = URL(string: "https://ntfy.sh/\(topic)")!
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        // Generic title — never leak names in cleartext to ntfy's own clients.
+        req.setValue("Nudge", forHTTPHeaderField: "Title")
+        req.httpBody = Data(body.utf8)
+        let (_, resp) = try await URLSession.shared.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            log.error("\(label) returned \(http.statusCode)")
+            throw URLError(.badServerResponse)
+        }
+        log.info("\(label) ok")
     }
 
     private func startPathMonitorIfNeeded() {
@@ -171,11 +237,14 @@ final class NudgeTransport: ObservableObject {
                 let was = self.lastPathStatus
                 self.lastPathStatus = path.status
                 if was != .satisfied, path.status == .satisfied,
-                   let user = self.currentSubscribedUser {
-                    self.log.info("network became satisfied, resubscribing")
+                   let user = self.currentUser {
+                    self.log.info("network became satisfied, resubscribing + saying hello")
                     self.receiveTask?.cancel()
                     self.receiveTask = Task { [weak self] in
                         await self?.subscribeLoop(user: user)
+                    }
+                    Task { [weak self] in
+                        await self?.sendHello(as: user)
                     }
                 }
             }

@@ -90,27 +90,38 @@ final class NudgeStats: ObservableObject {
     }
 
     func sentBreakdownThisWeek() -> [(peer: String, count: Int)] {
-        nudgeUsers.compactMap { peer in
-            let n = sentThisWeek(to: peer)
-            return n > 0 ? (peer, n) : nil
-        }
+        let suffix = ":\(currentWeek)"
+        return counts
+            .filter { $0.key.hasPrefix("sent:") && $0.key.hasSuffix(suffix) && $0.value > 0 }
+            .map { entry -> (String, Int) in
+                let body = String(entry.key.dropFirst("sent:".count).dropLast(suffix.count))
+                return (body, entry.value)
+            }
+            .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+            .map { (peer: $0.0, count: $0.1) }
     }
 
     func receivedBreakdownThisWeek() -> [(peer: String, count: Int)] {
-        nudgeUsers.compactMap { peer in
-            let n = receivedThisWeek(from: peer)
-            return n > 0 ? (peer, n) : nil
-        }
+        let suffix = ":\(currentWeek)"
+        return counts
+            .filter { $0.key.hasPrefix("recv:") && $0.key.hasSuffix(suffix) && $0.value > 0 }
+            .map { entry -> (String, Int) in
+                let body = String(entry.key.dropFirst("recv:".count).dropLast(suffix.count))
+                return (body, entry.value)
+            }
+            .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
+            .map { (peer: $0.0, count: $0.1) }
     }
 
     func leaderboardThisWeek() -> [(peer: String, sends: Int)] {
         let week = currentWeek
         let me = NudgeIdentity.shared.current
-        return nudgeUsers.map { user -> (String, Int) in
-            if user == me {
-                return (user, mySendsThisWeek)
+        let names = NudgeRoster.shared.everyone(including: me)
+        return names.map { name -> (String, Int) in
+            if name == me {
+                return (name, mySendsThisWeek)
             } else {
-                return (user, peerLB["\(user):\(week)"] ?? 0)
+                return (name, peerLB["\(name):\(week)"] ?? 0)
             }
         }
         .sorted { $0.1 > $1.1 }

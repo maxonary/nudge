@@ -10,10 +10,15 @@ struct NudgeNotchView: View {
     @ObservedObject var transport: NudgeTransport = .shared
     @ObservedObject var identity: NudgeIdentity = .shared
     @ObservedObject var teamSecret: NudgeTeamSecret = .shared
+    @ObservedObject var roster: NudgeRoster = .shared
     @EnvironmentObject var vm: BoringViewModel
 
     @State private var sending: String?
     @State private var sendError: String?
+
+    private var others: [String] {
+        roster.others(excluding: identity.current)
+    }
 
     var body: some View {
         Group {
@@ -39,12 +44,12 @@ struct NudgeNotchView: View {
                 Text("Set team password in Settings")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-            } else if identity.others.isEmpty {
-                Text("No teammates configured")
+            } else if others.isEmpty {
+                Text("Waiting for teammates…")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(identity.others, id: \.self) { other in
+                ForEach(others, id: \.self) { other in
                     pingButton(other)
                 }
             }
