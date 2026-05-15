@@ -19,10 +19,11 @@ struct DynamicNotchApp: App {
     @Default(.nudgeShowBackupNotification) var showBackupNotification
     @ObservedObject var identity = NudgeIdentity.shared
     @ObservedObject var teamSecret = NudgeTeamSecret.shared
+    @ObservedObject var stats = NudgeStats.shared
     @Environment(\.openWindow) var openWindow
 
     var body: some Scene {
-        MenuBarExtra("Nudge", systemImage: "hand.wave.fill", isInserted: $showMenuBarIcon) {
+        MenuBarExtra(isInserted: $showMenuBarIcon) {
             if let me = identity.current {
                 Text("You are: \(me)")
             } else {
@@ -52,6 +53,15 @@ struct DynamicNotchApp: App {
                 NSApplication.shared.terminate(self)
             }
             .keyboardShortcut(KeyEquivalent("Q"), modifiers: .command)
+        } label: {
+            // Wave + your weekly send count. When you've sent 0 this week
+            // it's just the wave; once you ping, the number appears.
+            HStack(spacing: 3) {
+                Image(systemName: "hand.wave.fill")
+                if stats.mySendsThisWeek > 0 {
+                    Text("\(stats.mySendsThisWeek)")
+                }
+            }
         }
     }
 }

@@ -19,6 +19,7 @@ struct SettingsView: View {
 struct NudgeSettingsPane: View {
     @ObservedObject var identity = NudgeIdentity.shared
     @ObservedObject var teamSecret = NudgeTeamSecret.shared
+    @ObservedObject var stats = NudgeStats.shared
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
     @State private var showingPasswordSheet: Bool = false
@@ -72,6 +73,76 @@ struct NudgeSettingsPane: View {
                 Text("Team password")
             } footer: {
                 Text("Everyone on your team must type the same password. It encrypts your pings end-to-end and decides who can reach you. Stored in Keychain, never sent over the network.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                let lb = stats.leaderboardThisWeek()
+                let allZero = lb.allSatisfy { $0.sends == 0 }
+                if allZero {
+                    Text("No nudges yet this week.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(lb.enumerated()), id: \.element.peer) { idx, row in
+                        HStack {
+                            Text("\(idx + 1).")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                                .frame(width: 22, alignment: .leading)
+                            Text(row.peer)
+                                .fontWeight(row.peer == identity.current ? .semibold : .regular)
+                            if row.peer == identity.current {
+                                Text("(you)")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                            Spacer()
+                            Text("\(row.sends)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                let sent = stats.sentBreakdownThisWeek()
+                if !sent.isEmpty {
+                    Divider()
+                    Text("You sent")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(sent, id: \.peer) { row in
+                        HStack {
+                            Text("→ \(row.peer)")
+                            Spacer()
+                            Text("\(row.count)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                let recv = stats.receivedBreakdownThisWeek()
+                if !recv.isEmpty {
+                    Divider()
+                    Text("You received")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(recv, id: \.peer) { row in
+                        HStack {
+                            Text("← \(row.peer)")
+                            Spacer()
+                            Text("\(row.count)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("This week (\(stats.currentWeek))")
+            } footer: {
+                Text("Each row is what that teammate has reported via their pings this week. Someone who hasn't pinged yet shows 0.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

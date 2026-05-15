@@ -13,6 +13,21 @@ struct NudgePing: Equatable {
     let receivedAt: Date
 }
 
+/// Wire payload carried inside the AES-GCM-encrypted body. We extend the
+/// raw sender-name string with the sender's own weekly send count so
+/// receivers can build a cross-team leaderboard without a backend.
+private struct NudgePayload: Codable {
+    let v: Int
+    let sender: String
+    let weekSends: Int
+
+    init(sender: String, weekSends: Int) {
+        self.v = 1
+        self.sender = sender
+        self.weekSends = weekSends
+    }
+}
+
 @MainActor
 final class NudgeTransport: ObservableObject {
     static let shared = NudgeTransport()
@@ -34,10 +49,20 @@ final class NudgeTransport: ObservableObject {
             log.error("send aborted: no team password set")
             throw URLError(.userAuthenticationRequired)
         }
-        guard let encryptedBody = NudgeTeamSecret.shared.encrypt(sender) else {
-            log.error("send aborted: encryption failed")
+
+        // Increment first so the count we broadcast already includes this ping.
+        NudgeStats.shared.recordSent(to: recipient)
+        let payload = NudgePayload(
+            sender: sender,
+            weekSends: NudgeStats.shared.mySendsThisWeek
+        )
+        guard let payloadData = try? JSONEncoder().encode(payload),
+              let payloadStr = String(data: payloadData, encoding: .utf8),
+              let encryptedBody = NudgeTeamSecret.shared.encrypt(payloadStr) else {
+            log.error("send aborted: payload encode/encryption failed")
             throw URLError(.cannotCreateFile)
         }
+
         let url = URL(string: "https://ntfy.sh/\(topic)")!
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -109,15 +134,29 @@ final class NudgeTransport: ObservableObject {
                 let event = json["event"] as? String ?? ""
                 if event != "message" { continue }
                 guard let messageBody = json["message"] as? String,
-                      let sender = NudgeTeamSecret.shared.decrypt(messageBody) else {
+                      let plaintext = NudgeTeamSecret.shared.decrypt(messageBody) else {
                     // Silently drop messages we can't decrypt (different
                     // password, corrupted payload, etc.) so we don't
                     // surface garbage as a ping.
                     log.info("dropping undecryptable message")
                     continue
                 }
+                // Try v1 JSON payload first; fall back to plain-string format
+                // from v0.3.0–v0.3.2 builds.
+                let senderName: String
+                let reportedWeekSends: Int
+                if let pdata = plaintext.data(using: .utf8),
+                   let payload = try? JSONDecoder().decode(NudgePayload.self, from: pdata) {
+                    senderName = payload.sender
+                    reportedWeekSends = payload.weekSends
+                } else {
+                    senderName = plaintext
+                    reportedWeekSends = 0
+                }
                 await MainActor.run {
-                    self.lastIncoming = NudgePing(sender: sender, receivedAt: Date())
+                    NudgeStats.shared.recordReceived(from: senderName)
+                    NudgeStats.shared.recordPeerLeaderboard(peer: senderName, weekSends: reportedWeekSends)
+                    self.lastIncoming = NudgePing(sender: senderName, receivedAt: Date())
                 }
             }
         }
