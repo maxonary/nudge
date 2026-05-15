@@ -18,7 +18,7 @@ struct OnboardingFinishView: View {
 
             Image(systemName: "sparkles")
                 .font(.system(size: 60))
-                .foregroundColor(.effectiveAccent)
+                .foregroundStyle(.tint)
                 .padding()
 
             Text("You're All Set!")
@@ -49,10 +49,7 @@ struct OnboardingFinishView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
-                .ignoresSafeArea()
-        )
+        .background(.ultraThinMaterial)
     }
 }
 

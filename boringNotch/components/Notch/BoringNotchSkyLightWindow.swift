@@ -1,114 +1,29 @@
 //
 //  BoringNotchSkyLightWindow.swift
-//  boringNotch
+//  Nudge
 //
-//  Created by Alexander on 2025-10-20.
+//  Borderless NSPanel that sits at the system menu-bar level over the
+//  physical notch. The SkyLight-based lock-screen overlay from upstream
+//  Boring Notch is dropped — Nudge doesn't need to render over the
+//  lock screen and dropping it removes the SkyLightWindow SPM dep.
 //
 
 import Cocoa
-import SkyLightWindow
-import Defaults
-import Combine
-
-extension SkyLightOperator {
-    func undelegateWindow(_ window: NSWindow) {
-        typealias F_SLSRemoveWindowsFromSpaces = @convention(c) (Int32, CFArray, CFArray) -> Int32
-        
-        let handler = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/SkyLight", RTLD_NOW)
-        guard let SLSRemoveWindowsFromSpaces = unsafeBitCast(
-            dlsym(handler, "SLSRemoveWindowsFromSpaces"),
-            to: F_SLSRemoveWindowsFromSpaces?.self
-        ) else {
-            return
-        }
-        
-        // Remove the window from the SkyLight space
-        _ = SLSRemoveWindowsFromSpaces(
-            connection,
-            [window.windowNumber] as CFArray,
-            [space] as CFArray
-        )
-    }
-}
 
 class BoringNotchSkyLightWindow: NSPanel {
-    private var isSkyLightEnabled: Bool = false
-    
-    override init(
-        contentRect: NSRect,
-        styleMask: NSWindow.StyleMask,
-        backing: NSWindow.BackingStoreType,
-        defer flag: Bool
-    ) {
-        super.init(
-            contentRect: contentRect,
-            styleMask: styleMask,
-            backing: backing,
-            defer: flag
-        )
-        
-        configureWindow()
-        setupObservers()
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+        self.level = .statusBar
+        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        self.isOpaque = false
+        self.backgroundColor = .clear
+        self.hasShadow = false
+        self.hidesOnDeactivate = false
+        self.isMovable = false
+        self.isMovableByWindowBackground = false
     }
-    
-    private func configureWindow() {
-        isFloatingPanel = true
-        isOpaque = false
-        titleVisibility = .hidden
-        titlebarAppearsTransparent = true
-        backgroundColor = .clear
-        isMovable = false
-        level = .mainMenu + 3
-        hasShadow = false
-        isReleasedWhenClosed = false
-        
-        // Force dark appearance regardless of system setting
-        appearance = NSAppearance(named: .darkAqua)
-        
-        collectionBehavior = [
-            .fullScreenAuxiliary,
-            .stationary,
-            .canJoinAllSpaces,
-            .ignoresCycle,
-        ]
-        
-        // Apply initial sharing type setting
-        updateSharingType()
-    }
-    
-    private func setupObservers() {
-        // Listen for changes to the hideFromScreenRecording setting
-        Defaults.publisher(.hideFromScreenRecording)
-            .sink { [weak self] _ in
-                self?.updateSharingType()
-            }
-            .store(in: &observers)
-    }
-    
-    private func updateSharingType() {
-        if Defaults[.hideFromScreenRecording] {
-            sharingType = .none
-        } else {
-            sharingType = .readWrite
-        }
-    }
-    
-    func enableSkyLight() {
-        if !isSkyLightEnabled {
-            SkyLightOperator.shared.delegateWindow(self)
-            isSkyLightEnabled = true
-        }
-    }
-    
-    func disableSkyLight() {
-        if isSkyLightEnabled {
-            SkyLightOperator.shared.undelegateWindow(self)
-            isSkyLightEnabled = false
-        }
-    }
-    
-    private var observers: Set<AnyCancellable> = []
-    
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
+
+    // No-op preserved so AppDelegate's lock/unlock paths still compile.
+    func enableSkyLight() {}
+    func disableSkyLight() {}
 }

@@ -67,20 +67,16 @@ struct DynamicNotchApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusItem: NSStatusItem?
     var windows: [String: NSWindow] = [:] // UUID -> NSWindow
     var viewModels: [String: BoringViewModel] = [:] // UUID -> BoringViewModel
     var window: NSWindow?
     let vm: BoringViewModel = .init()
     @ObservedObject var coordinator = BoringViewCoordinator.shared
-    var whatsNewWindow: NSWindow?
-    var timer: Timer?
     var closeNotchTask: Task<Void, Never>?
     private var previousScreens: [NSScreen]?
     private var onboardingWindowController: NSWindowController?
     private var screenLockedObserver: Any?
     private var screenUnlockedObserver: Any?
-    private var isScreenLocked: Bool = false
     private var windowScreenDidChangeObserver: Any?
     private var identityCancellable: AnyCancellable?
 
@@ -104,57 +100,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func onScreenLocked(_ notification: Notification) {
-        isScreenLocked = true
         if !Defaults[.showOnLockScreen] {
             cleanupWindows()
-        } else {
-            enableSkyLightOnAllWindows()
         }
     }
 
     @MainActor
     func onScreenUnlocked(_ notification: Notification) {
-        isScreenLocked = false
         if !Defaults[.showOnLockScreen] {
             adjustWindowPosition(changeAlpha: true)
-        } else {
-            disableSkyLightOnAllWindows()
-        }
-    }
-    
-    @MainActor
-    private func enableSkyLightOnAllWindows() {
-        if Defaults[.showOnAllDisplays] {
-            windows.values.forEach { window in
-                if let skyWindow = window as? BoringNotchSkyLightWindow {
-                    skyWindow.enableSkyLight()
-                }
-            }
-        } else {
-            if let skyWindow = window as? BoringNotchSkyLightWindow {
-                skyWindow.enableSkyLight()
-            }
-        }
-    }
-    
-    @MainActor
-    private func disableSkyLightOnAllWindows() {
-        // Delay disabling SkyLight to avoid flicker during unlock transition
-        Task {
-            try? await Task.sleep(for: .milliseconds(150))
-            await MainActor.run {
-                if Defaults[.showOnAllDisplays] {
-                    self.windows.values.forEach { window in
-                        if let skyWindow = window as? BoringNotchSkyLightWindow {
-                            skyWindow.disableSkyLight()
-                        }
-                    }
-                } else {
-                    if let skyWindow = self.window as? BoringNotchSkyLightWindow {
-                        skyWindow.disableSkyLight()
-                    }
-                }
-            }
         }
     }
 
@@ -182,21 +136,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func createBoringNotchWindow(for screen: NSScreen, with viewModel: BoringViewModel) -> NSWindow {
         let rect = NSRect(x: 0, y: 0, width: windowSize.width, height: windowSize.height)
         let styleMask: NSWindow.StyleMask = [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]
-        
         let window = BoringNotchSkyLightWindow(contentRect: rect, styleMask: styleMask, backing: .buffered, defer: false)
-        
-        // Enable SkyLight only when screen is locked
-        if isScreenLocked {
-            window.enableSkyLight()
-        } else {
-            window.disableSkyLight()
-        }
-
         window.contentView = NSHostingView(
             rootView: ContentView()
                 .environmentObject(viewModel)
         )
-
         window.orderFrontRegardless()
         NotchSpaceManager.shared.notchSpace.windows.insert(window)
         return window
@@ -472,22 +416,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-    }
-
-    @objc func togglePopover(_ sender: Any?) {
-        if window?.isVisible == true {
-            window?.orderOut(nil)
-        } else {
-            window?.orderFrontRegardless()
-        }
-    }
-
-    @objc func showMenu() {
-        statusItem?.menu?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
-
-    @objc func quitAction() {
-        NSApplication.shared.terminate(self)
     }
 
     private func showOnboardingWindow(step: OnboardingStep = .identity) {
