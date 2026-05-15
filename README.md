@@ -1,7 +1,13 @@
 # Nudge
 
+<img width="687" height="440" alt="Bildschirmfoto 2026-05-14 um 22 55 04" src="https://github.com/user-attachments/assets/afe4e9ac-8836-48b6-a04a-db084491adbb" />
+
 Glanceable "raise hand" signal between Ontora founders that pierces noise-cancelling
 headphones without forcing anyone to physically get up.
+
+
+https://github.com/user-attachments/assets/dfe08808-3287-4531-882b-e5c38b27d68b
+
 
 ## Backstory
 
