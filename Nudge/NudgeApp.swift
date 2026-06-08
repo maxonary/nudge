@@ -19,6 +19,7 @@ struct DynamicNotchApp: App {
     @Default(.nudgeShowBackupNotification) var showBackupNotification
     @ObservedObject var identity = NudgeIdentity.shared
     @Environment(\.openWindow) var openWindow
+    @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
     var body: some Scene {
         MenuBarExtra("Nudge", systemImage: "hand.wave.fill", isInserted: $showMenuBarIcon) {
@@ -39,6 +40,13 @@ struct DynamicNotchApp: App {
             Divider()
             Toggle("Play sound on receive", isOn: $playSoundOnReceive)
             Toggle("Show macOS notification", isOn: $showBackupNotification)
+            Toggle("Open at login", isOn: Binding(
+                get: { launchAtLogin },
+                set: { newValue in
+                    LoginItem.setEnabled(newValue)
+                    launchAtLogin = LoginItem.isEnabled
+                }
+            ))
             Divider()
             Text("Topic nonce: \(nudgeNonce)")
             Button("Copy nonce") {

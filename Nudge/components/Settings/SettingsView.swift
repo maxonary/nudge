@@ -5,7 +5,35 @@
 
 import AppKit
 import Defaults
+import ServiceManagement
 import SwiftUI
+import os
+
+/// Thin wrapper over the modern `SMAppService` login-item API (macOS 13+).
+enum LoginItem {
+    private static let log = Logger(subsystem: "com.ontora.nudge", category: "loginitem")
+
+    static var isEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    @discardableResult
+    static func setEnabled(_ enabled: Bool) -> Bool {
+        do {
+            if enabled {
+                if SMAppService.mainApp.status != .enabled {
+                    try SMAppService.mainApp.register()
+                }
+            } else if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            }
+            return true
+        } catch {
+            log.error("login item toggle failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+}
 
 struct SettingsView: View {
     var body: some View {
@@ -21,6 +49,17 @@ struct NudgeSettingsPane: View {
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
     @State private var copiedNonce: Bool = false
+    @State private var launchAtLogin: Bool = LoginItem.isEnabled
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLogin },
+            set: { newValue in
+                LoginItem.setEnabled(newValue)
+                launchAtLogin = LoginItem.isEnabled
+            }
+        )
+    }
 
     var body: some View {
         Form {
@@ -48,6 +87,16 @@ struct NudgeSettingsPane: View {
                 Text("Identity")
             } footer: {
                 Text("Pick who you are. Every Ontora teammate's build runs this app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Open Nudge at login", isOn: launchAtLoginBinding)
+            } header: {
+                Text("Startup")
+            } footer: {
+                Text("Automatically start Nudge when you log in to your Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -86,7 +135,7 @@ struct NudgeSettingsPane: View {
             }
 
             Section {
-                Text("Nudge sends a hand-raise ping through ntfy.sh under a topic derived from the recipient's name + the shared nonce. No backend, no accounts, no message contents (just \"X wants you\"). When someone pings you, your notch expands for ~6 seconds; a macOS notification fires as a backup in case the notch is off-screen.")
+                Text("Nudge sends a hand-raise ping through ntfy.sh under a topic derived from the recipient's name + the shared nonce. No backend, no accounts — just \"X wants you\" plus an optional short message. When someone pings you, your notch expands for ~6 seconds; a macOS notification fires as a backup in case the notch is off-screen.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
