@@ -1,4 +1,4 @@
-name: "Deploy Boring Notch"
+name: "Deploy Nudge"
 on:
   issue_comment:
     types: [created]
@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PROJECT_NAME: boringNotch
+  PROJECT_NAME: Nudge
   BETA_CHANNEL_NAME: beta
   RELEASE_COMMAND: /release
   CODE_SIGN_IDENTITY: "Apple Development"
@@ -248,12 +248,12 @@ jobs:
       - name: Create embedded release notes
         env:
           RELEASE_NOTES: ${{ needs.preparation.outputs.release_notes }}
-        run: printf '%s' "$RELEASE_NOTES" > Release/boringNotch.html
+        run: printf '%s' "$RELEASE_NOTES" > Release/Nudge.html
 
       - name: Build Sparkle generate_appcast from source
         run: |
           set -euo pipefail
-          SPARKLE_METADATA_PATH="boringNotch.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+          SPARKLE_METADATA_PATH="Nudge.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
           SPARKLE_SRC="$RUNNER_TEMP/Sparkle"
           SPARKLE_DERIVED="$RUNNER_TEMP/sparkle-derived"
           SPARKLE_REPO_URL="https://github.com/sparkle-project/Sparkle"
@@ -385,7 +385,7 @@ jobs:
           if [[ "${IS_BETA}" == "true" ]]; then
             RELEASE_FLAGS=(--prerelease)
           fi
-          gh release create "v${VERSION}" Release/boringNotch.dmg \
+          gh release create "v${VERSION}" Release/Nudge.dmg \
             --title "v${VERSION} - ${TITLE}" \
             --notes "$NOTES" \
             "${RELEASE_FLAGS[@]}"
@@ -401,7 +401,7 @@ jobs:
       - name: Generate cask files
         run: |
           set -euo pipefail
-          DMG_URL="https://github.com/TheBoredTeam/boring.notch/releases/download/v${VERSION}/boringNotch.dmg"
+          DMG_URL="https://github.com/TheBoredTeam/boring.notch/releases/download/v${VERSION}/Nudge.dmg"
 
           # Retry SHA calculation (release may need a moment to propagate)
           for attempt in 1 2 3; do
@@ -426,10 +426,10 @@ jobs:
             end
             auto_updates true
             depends_on macos: ">= :sonoma"
-            app "boringNotch.app"
+            app "Nudge.app"
             
             postflight do
-              app_path = appdir/"boringNotch.app"
+              app_path = appdir/"Nudge.app"
               next unless app_path.exist?
               system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", app_path]
             end
@@ -444,10 +444,10 @@ jobs:
           CASK
           }
 
-          write_cask "boring-notch@rc" "Boring Notch RC" \
+          write_cask "boring-notch@rc" "Nudge RC" \
             "Not so boring notch That Rocks (Release Candidate)" > boring-notch@rc.rb
           if [[ "${IS_BETA}" == "false" ]]; then
-            write_cask "boring-notch" "Boring Notch" \
+            write_cask "boring-notch" "Nudge" \
               "Not so boring notch That Rocks" > boring-notch.rb
           fi
 
@@ -546,10 +546,10 @@ jobs:
           fi
           {
             if [[ "${RELEASE_SUCCEEDED}" == "true" ]]; then
-              echo "✅ Released boringNotch v${VERSION} (${BUILD_TYPE} build ${BUILD_NUMBER})"
+              echo "✅ Released Nudge v${VERSION} (${BUILD_TYPE} build ${BUILD_NUMBER})"
               echo "🍺 Homebrew cask updated"
               echo "📱 Sparkle appcast updated"
             else
-              echo "❌ Release failed${VERSION:+ for boringNotch v${VERSION}}"
+              echo "❌ Release failed${VERSION:+ for Nudge v${VERSION}}"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

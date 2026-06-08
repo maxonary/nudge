@@ -46,7 +46,7 @@ jobs:
         run: xcodebuild -version
 
       - name: Resolve Swift packages
-        run: xcodebuild -resolvePackageDependencies -project boringNotch.xcodeproj
+        run: xcodebuild -resolvePackageDependencies -project Nudge.xcodeproj
 
       - name: Archive (ad-hoc signed)
         env:
@@ -54,8 +54,8 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild archive \
-            -project boringNotch.xcodeproj \
-            -scheme boringNotch \
+            -project Nudge.xcodeproj \
+            -scheme Nudge \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath build/Nudge.xcarchive \

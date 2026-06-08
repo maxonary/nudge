@@ -24,7 +24,7 @@ just the ping.
 The friction of "I have to move the cursor to my notch to ping you" is a
 feature, not a bug. It filters out interruptions that aren't worth the cost.
 
-Nudge is a fork of [Boring Notch](https://github.com/TheBoredTeam/boring.notch).
+Nudge is a fork of [Nudge](https://github.com/TheBoredTeam/boring.notch).
 Everything that doesn't serve the team-ping flow is disabled in this build;
 see `TODO_V2_CLEANUP.md` for the dormant code still on disk.
 
@@ -35,7 +35,7 @@ service. Each user subscribes to a topic derived from their name plus a
 shared 12-char lowercase nonce. The nonce is the only thing that keeps random
 people on the internet from being able to ping us.
 
-The current nonce (baked into the build, read from `boringNotch/Nudge/NudgeConstants.swift`):
+The current nonce (baked into the build, read from `Nudge/Nudge/NudgeConstants.swift`):
 
 ```
 k4n9pq7vx2tm
@@ -66,7 +66,7 @@ curl -d "Max" -H "Title: Max wants you" \
 ```bash
 git clone <this repo>
 cd <repo>
-open boringNotch.xcodeproj
+open Nudge.xcodeproj
 # In Xcode, hit ⌘R
 ```
 
@@ -135,11 +135,11 @@ or use two laptops), switch one to Leon via Settings, ping from Max.
 
 ## Credits
 
-This is a fork of [Boring Notch](https://github.com/TheBoredTeam/boring.notch)
+This is a fork of [Nudge](https://github.com/TheBoredTeam/boring.notch)
 by The Boring Team — their notch overlay window plumbing, expand/collapse
 animations, and menu bar wiring are doing the heavy lifting here. Nudge keeps
 their `LICENSE` intact and credits them in
 [`THIRD_PARTY_LICENSES`](./THIRD_PARTY_LICENSES).
 
-The notch idea, the team-ping flow, and the surgery to strip Boring Notch
+The notch idea, the team-ping flow, and the surgery to strip Nudge
 down to it are ours.
