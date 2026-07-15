@@ -51,6 +51,7 @@ jobs:
       - name: Archive (ad-hoc signed)
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          TENOR_API_KEY: ${{ secrets.TENOR_API_KEY }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -59,6 +60,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath build/Nudge.xcarchive \
+            TENOR_API_KEY="${TENOR_API_KEY}" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGNING_REQUIRED=YES \

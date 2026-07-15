@@ -37,13 +37,27 @@ enum NudgeGifError: LocalizedError {
 enum NudgeGifService {
     private static let log = Logger(subsystem: "com.ontora.nudge", category: "gif")
 
-    static var isConfigured: Bool {
-        !Defaults[.tenorApiKey].trimmingCharacters(in: .whitespaces).isEmpty
+    /// Team-wide default Tenor key so GIFs work out of the box for everyone —
+    /// no per-user setup. It is NOT in source: CI injects the `TENOR_API_KEY`
+    /// GitHub Actions secret into the app's Info.plist at build time (see
+    /// `TenorAPIKey` in Info.plist → `$(TENOR_API_KEY)`). Local dev builds
+    /// leave it empty, so they fall back to a per-user key in Settings.
+    private static var bundledTenorKey: String {
+        (Bundle.main.object(forInfoDictionaryKey: "TenorAPIKey") as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
     }
+
+    /// The user's own key if set, otherwise the shared bundled key.
+    private static var effectiveKey: String {
+        let user = Defaults[.tenorApiKey].trimmingCharacters(in: .whitespaces)
+        return user.isEmpty ? bundledTenorKey : user
+    }
+
+    static var isConfigured: Bool { !effectiveKey.isEmpty }
 
     /// Search GIFs for `query`. Empty query returns featured/trending.
     static func search(_ query: String, limit: Int = 24) async throws -> [NudgeGif] {
-        let key = Defaults[.tenorApiKey].trimmingCharacters(in: .whitespaces)
+        let key = effectiveKey
         guard !key.isEmpty else { throw NudgeGifError.noAPIKey }
         return try await TenorProvider.search(query: query, key: key, limit: limit)
     }

@@ -11,5 +11,7 @@
 	<array>
 		<dict/>
 	</array>
+	<key>TenorAPIKey</key>
+	<string>$(TENOR_API_KEY)</string>
 </dict>
 </plist>

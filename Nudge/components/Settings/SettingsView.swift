@@ -239,7 +239,7 @@ struct NudgeSettingsPane: View {
             } header: {
                 Text("GIFs")
             } footer: {
-                Text("Paste a Tenor API key to search and send GIFs. Get one free at developers.google.com/tenor — stored locally, never sent to teammates.")
+                Text("A shared team key ships with the app, so GIFs work out of the box. Paste your own Tenor key here only if you want to override it. Get one free at developers.google.com/tenor — stored locally, never sent to teammates.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
