@@ -51,7 +51,7 @@ struct NudgeSettingsPane: View {
     @ObservedObject var roster = NudgeRoster.shared
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
-    @Default(.tenorApiKey) var tenorApiKey
+    @Default(.klipyApiKey) var klipyApiKey
 
     @State private var nameDraft: String = NudgeIdentity.shared.current ?? ""
     @State private var nameError: String?
@@ -234,12 +234,12 @@ struct NudgeSettingsPane: View {
             }
 
             Section {
-                SecureField("Tenor API key", text: $tenorApiKey)
+                SecureField("Klipy API key", text: $klipyApiKey)
                     .textFieldStyle(.roundedBorder)
             } header: {
                 Text("GIFs")
             } footer: {
-                Text("A shared team key ships with the app, so GIFs work out of the box. Paste your own Tenor key here only if you want to override it. Get one free at developers.google.com/tenor — stored locally, never sent to teammates.")
+                Text("A shared team key ships with the app, so GIFs work out of the box. Paste your own Klipy key here only if you want to override it. Get one free at klipy.com/developers — stored locally, never sent to teammates.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

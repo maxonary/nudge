@@ -2,9 +2,14 @@
 //  NudgeGifService.swift
 //  Nudge
 //
-//  GIF search. Provider-abstracted so swapping Tenor <-> Giphy is a small
-//  change; Tenor is the default. The API key is stored in Defaults
-//  (`tenorApiKey`) and pasted by the user in Settings — nothing embedded.
+//  GIF search via KLIPY (https://klipy.com/developers). Tenor was shut down
+//  by Google on 2026-06-30; KLIPY is the drop-in successor. The service is
+//  provider-abstracted so swapping again later is a small change.
+//
+//  The team-wide API key is NOT in source (public repo). CI injects the
+//  `KLIPY_API_KEY` GitHub Actions secret into the app's Info.plist at build
+//  time (`KlipyAPIKey` = `$(KLIPY_API_KEY)`); a per-user key in Settings
+//  overrides it. Local dev builds leave it empty and fall back to Settings.
 //
 
 import Foundation
@@ -27,7 +32,7 @@ enum NudgeGifError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noAPIKey: return "Add a Tenor API key in Settings → GIFs."
+        case .noAPIKey: return "Add a Klipy API key in Settings → GIFs."
         case .badResponse: return "Couldn't reach the GIF service."
         }
     }
@@ -37,88 +42,95 @@ enum NudgeGifError: LocalizedError {
 enum NudgeGifService {
     private static let log = Logger(subsystem: "com.ontora.nudge", category: "gif")
 
-    /// Team-wide default Tenor key so GIFs work out of the box for everyone —
-    /// no per-user setup. It is NOT in source: CI injects the `TENOR_API_KEY`
-    /// GitHub Actions secret into the app's Info.plist at build time (see
-    /// `TenorAPIKey` in Info.plist → `$(TENOR_API_KEY)`). Local dev builds
-    /// leave it empty, so they fall back to a per-user key in Settings.
-    private static var bundledTenorKey: String {
-        (Bundle.main.object(forInfoDictionaryKey: "TenorAPIKey") as? String)?
+    /// Team-wide default key from Info.plist (CI-injected). Empty in local dev.
+    private static var bundledKey: String {
+        (Bundle.main.object(forInfoDictionaryKey: "KlipyAPIKey") as? String)?
             .trimmingCharacters(in: .whitespaces) ?? ""
     }
 
     /// The user's own key if set, otherwise the shared bundled key.
     private static var effectiveKey: String {
-        let user = Defaults[.tenorApiKey].trimmingCharacters(in: .whitespaces)
-        return user.isEmpty ? bundledTenorKey : user
+        let user = Defaults[.klipyApiKey].trimmingCharacters(in: .whitespaces)
+        return user.isEmpty ? bundledKey : user
     }
 
     static var isConfigured: Bool { !effectiveKey.isEmpty }
 
-    /// Search GIFs for `query`. Empty query returns featured/trending.
+    /// Search GIFs for `query`. Empty query returns trending.
     static func search(_ query: String, limit: Int = 24) async throws -> [NudgeGif] {
         let key = effectiveKey
         guard !key.isEmpty else { throw NudgeGifError.noAPIKey }
-        return try await TenorProvider.search(query: query, key: key, limit: limit)
+        return try await KlipyProvider.search(query: query, key: key, limit: limit)
     }
 }
 
-// MARK: - Tenor (Google) provider
+// MARK: - KLIPY provider
 
-private enum TenorProvider {
+private enum KlipyProvider {
     static func search(query: String, key: String, limit: Int) async throws -> [NudgeGif] {
-        var comps = URLComponents(string:
-            query.trimmingCharacters(in: .whitespaces).isEmpty
-                ? "https://tenor.googleapis.com/v2/featured"
-                : "https://tenor.googleapis.com/v2/search")!
-        var items = [
-            URLQueryItem(name: "key", value: key),
-            URLQueryItem(name: "client_key", value: "nudge"),
-            URLQueryItem(name: "limit", value: String(limit)),
-            URLQueryItem(name: "media_filter", value: "tinygif,nanogif,gif"),
-            URLQueryItem(name: "contentfilter", value: "high"),
-        ]
         let q = query.trimmingCharacters(in: .whitespaces)
-        if !q.isEmpty { items.insert(URLQueryItem(name: "q", value: q), at: 0) }
+        let trending = q.isEmpty
+        var comps = URLComponents(
+            string: "https://api.klipy.com/api/v1/\(key)/gifs/" + (trending ? "trending" : "search")
+        )!
+        var items = [
+            URLQueryItem(name: "per_page", value: String(min(max(limit, 8), 50))),
+            URLQueryItem(name: "page", value: "1"),
+            URLQueryItem(name: "customer_id", value: "nudge"),
+        ]
+        if !trending { items.insert(URLQueryItem(name: "q", value: q), at: 0) }
         comps.queryItems = items
 
-        let (data, resp) = try await URLSession.shared.data(from: comps.url!)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw NudgeGifError.badResponse
-        }
-        let decoded = try JSONDecoder().decode(TenorResponse.self, from: data)
-        return decoded.results.compactMap { $0.asNudgeGif }
-    }
-
-    // Minimal shapes for the fields we use.
-    private struct TenorResponse: Decodable { let results: [Result] }
-
-    private struct Result: Decodable {
-        let id: String
-        let content_description: String?
-        let media_formats: [String: Format]
-
-        var asNudgeGif: NudgeGif? {
-            // Preview: prefer the tiniest looping format.
-            let previewStr = media_formats["nanogif"]?.url
-                ?? media_formats["tinygif"]?.url
-                ?? media_formats["gif"]?.url
-            // Send: tinygif keeps the notch payload light.
-            let sendStr = media_formats["tinygif"]?.url
-                ?? media_formats["nanogif"]?.url
-                ?? media_formats["gif"]?.url
-            guard let previewStr, let sendStr,
-                  let preview = URL(string: previewStr), let send = URL(string: sendStr) else {
-                return nil
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: comps.url!)
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw NudgeGifError.badResponse
             }
-            return NudgeGif(
-                id: id,
-                previewURL: preview,
-                sendURL: send,
-                description: content_description ?? "GIF"
-            )
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            // { result, data: { data: [items], ... } }  — tolerate a flat array too.
+            let container = root["data"]
+            let list = (container as? [[String: Any]])
+                ?? ((container as? [String: Any])?["data"] as? [[String: Any]])
+                ?? []
+            return list.compactMap(parse)
+        } catch {
+            // Trending is best-effort (endpoint/params may vary); don't surface
+            // an error for the picker's initial load.
+            if trending { return [] }
+            throw error is NudgeGifError ? error : NudgeGifError.badResponse
         }
     }
 
-    private struct Format: Decodable { let url: String }
+    /// `file.<size>.<format>.url`, sizes xs/sm/md/hd, formats gif/webp/jpg/mp4/webm.
+    private static func parse(_ item: [String: Any]) -> NudgeGif? {
+        let file = item["file"] as? [String: Any] ?? [:]
+        // sm is a good notch/grid size; fall back up/down and to a recursive scan.
+        let preview = url(file, size: "sm", "gif") ?? url(file, size: "xs", "gif")
+            ?? url(file, size: "md", "gif") ?? anyGifURL(file)
+        let send = url(file, size: "sm", "gif") ?? url(file, size: "md", "gif")
+            ?? url(file, size: "xs", "gif") ?? url(file, size: "hd", "gif") ?? anyGifURL(file)
+        guard let previewStr = preview, let sendStr = send,
+              let p = URL(string: previewStr), let s = URL(string: sendStr) else {
+            return nil
+        }
+        let id = item["id"].map { "\($0)" } ?? sendStr
+        let desc = (item["title"] as? String) ?? (item["slug"] as? String) ?? "GIF"
+        return NudgeGif(id: id, previewURL: p, sendURL: s, description: desc)
+    }
+
+    private static func url(_ file: [String: Any], size: String, _ format: String) -> String? {
+        ((file[size] as? [String: Any])?[format] as? [String: Any])?["url"] as? String
+    }
+
+    /// Last resort: first `.gif` URL found anywhere in the file tree.
+    private static func anyGifURL(_ obj: Any) -> String? {
+        if let s = obj as? String, s.hasPrefix("http"), s.contains(".gif") { return s }
+        if let dict = obj as? [String: Any] {
+            for v in dict.values { if let f = anyGifURL(v) { return f } }
+        }
+        if let arr = obj as? [Any] {
+            for v in arr { if let f = anyGifURL(v) { return f } }
+        }
+        return nil
+    }
 }

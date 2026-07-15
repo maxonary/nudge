@@ -174,6 +174,6 @@ extension Defaults.Keys {
     // MARK: Nudge
     static let nudgePlaySoundOnReceive = Key<Bool>("nudgePlaySoundOnReceive", default: true)
     static let nudgeShowBackupNotification = Key<Bool>("nudgeShowBackupNotification", default: true)
-    // Tenor (GIF search) API key — paste your own in Settings.
-    static let tenorApiKey = Key<String>("tenorApiKey", default: "")
+    // Klipy (GIF search) API key — paste your own in Settings.
+    static let klipyApiKey = Key<String>("klipyApiKey", default: "")
 }

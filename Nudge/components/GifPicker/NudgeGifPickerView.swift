@@ -2,7 +2,7 @@
 //  NudgeGifPickerView.swift
 //  Nudge
 //
-//  Search Tenor, pick a GIF, choose a teammate, optionally add a message,
+//  Search KLIPY, pick a GIF, choose a teammate, optionally add a message,
 //  and send. Lives in its own panel (see GifPickerWindowController) so the
 //  ephemeral notch doesn't dismiss it mid-search.
 //
@@ -66,9 +66,9 @@ struct NudgeGifPickerView: View {
             Image(systemName: "key.horizontal")
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary)
-            Text("No Tenor API key yet")
+            Text("No Klipy API key yet")
                 .font(.title3.weight(.semibold))
-            Text("Paste a Tenor API key in Settings → GIFs to search and send GIFs.")
+            Text("Paste a Klipy API key in Settings → GIFs to search and send GIFs.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             Button("Open Settings") {
