@@ -9,12 +9,18 @@ import AppKit
 struct NudgeNotchView: View {
     @ObservedObject var transport: NudgeTransport = .shared
     @ObservedObject var identity: NudgeIdentity = .shared
+    @ObservedObject var teamSecret: NudgeTeamSecret = .shared
+    @ObservedObject var roster: NudgeRoster = .shared
     @EnvironmentObject var vm: NudgeViewModel
 
     @State private var sending: String?
     @State private var sendError: String?
     @State private var messageText: String = ""
     @FocusState private var messageFocused: Bool
+
+    private var others: [String] {
+        roster.others(excluding: identity.current)
+    }
 
     var body: some View {
         Group {
@@ -36,15 +42,19 @@ struct NudgeNotchView: View {
                 Text("Pick a name in Settings")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-            } else if identity.others.isEmpty {
-                Text("No teammates configured")
+            } else if !teamSecret.hasPassword {
+                Text("Set team password in Settings")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else if others.isEmpty {
+                Text("Waiting for teammates…")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 8) {
                     messageField
                     HStack(spacing: 10) {
-                        ForEach(identity.others, id: \.self) { other in
+                        ForEach(others, id: \.self) { other in
                             pingButton(other)
                         }
                         if let err = sendError {
@@ -96,17 +106,17 @@ struct NudgeNotchView: View {
     }
 
     private func incomingView(for ping: NudgePing) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             ZStack {
                 Circle()
                     .fill(Color.accentColor.opacity(0.9))
-                    .frame(width: 36, height: 36)
+                    .frame(width: 26, height: 26)
                 Text(String(ping.sender.prefix(1)))
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(ping.sender) wants you")
+            VStack(alignment: .center, spacing: 2) {
+                Text("\(ping.sender) is waving")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                 if let message = ping.message, !message.isEmpty {
@@ -119,8 +129,17 @@ struct NudgeNotchView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            dismissIncoming()
+        }
+    }
+
+    private func dismissIncoming() {
+        transport.lastIncoming = nil
+        vm.close()
     }
 
     private func tap(_ recipient: String) {

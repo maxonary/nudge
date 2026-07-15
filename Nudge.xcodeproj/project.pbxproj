@@ -34,6 +34,10 @@
 		14D570C92C5F38890011E668 /* NudgeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D570C82C5F38890011E668 /* NudgeViewModel.swift */; };
 		14E9FEAE2C7325770062E83F /* Button+Bouncing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E9FEAD2C7325770062E83F /* Button+Bouncing.swift */; };
 		14FC6E502C7DED5600C7BEA5 /* DataTypes+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14FC6E4F2C7DED5600C7BEA5 /* DataTypes+Extensions.swift */; };
+		1FB98063B994504FE32D0A59 /* NudgePasswordPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8405B521985C8120633C3EE /* NudgePasswordPickerView.swift */; };
+		4056511EC8FE68B0B8A7AE0F /* NudgeRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A93A85D5B4F91DCE1C994D /* NudgeRoster.swift */; };
+		5D801A1AF37495A88EB59F2E /* NudgeTeamSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41DF965EE177D3892EF7B81 /* NudgeTeamSecret.swift */; };
+		9F18C9B556E15061567A3991 /* NudgeStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 407FCC9217CDCECC553F619E /* NudgeStats.swift */; };
 		AAA000000000000000000020 /* NudgeConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000010 /* NudgeConstants.swift */; };
 		AAA000000000000000000021 /* NudgeIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000011 /* NudgeIdentity.swift */; };
 		AAA000000000000000000022 /* NudgeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000012 /* NudgeTransport.swift */; };
@@ -97,6 +101,8 @@
 		14D570C82C5F38890011E668 /* NudgeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeViewModel.swift; sourceTree = "<group>"; };
 		14E9FEAD2C7325770062E83F /* Button+Bouncing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Button+Bouncing.swift"; sourceTree = "<group>"; };
 		14FC6E4F2C7DED5600C7BEA5 /* DataTypes+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataTypes+Extensions.swift"; sourceTree = "<group>"; };
+		407FCC9217CDCECC553F619E /* NudgeStats.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeStats.swift; sourceTree = "<group>"; };
+		74A93A85D5B4F91DCE1C994D /* NudgeRoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeRoster.swift; sourceTree = "<group>"; };
 		AAA000000000000000000010 /* NudgeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeConstants.swift; sourceTree = "<group>"; };
 		AAA000000000000000000011 /* NudgeIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeIdentity.swift; sourceTree = "<group>"; };
 		AAA000000000000000000012 /* NudgeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeTransport.swift; sourceTree = "<group>"; };
@@ -111,6 +117,8 @@
 		B1C448952C9712C4001F0858 /* ActionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionBar.swift; sourceTree = "<group>"; };
 		B1CE8CFD2C6F659400DD9871 /* KeyboardShortcutsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutsHelper.swift; sourceTree = "<group>"; };
 		B1FEB4982C7686630066EBBC /* PanGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanGesture.swift; sourceTree = "<group>"; };
+		E8405B521985C8120633C3EE /* NudgePasswordPickerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgePasswordPickerView.swift; sourceTree = "<group>"; };
+		F41DF965EE177D3892EF7B81 /* NudgeTeamSecret.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeTeamSecret.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -377,6 +385,10 @@
 				AAA000000000000000000013 /* NudgeNotifier.swift */,
 				AAA000000000000000000014 /* NudgeNotchView.swift */,
 				AAA000000000000000000015 /* NudgeIdentityPickerView.swift */,
+				F41DF965EE177D3892EF7B81 /* NudgeTeamSecret.swift */,
+				74A93A85D5B4F91DCE1C994D /* NudgeRoster.swift */,
+				407FCC9217CDCECC553F619E /* NudgeStats.swift */,
+				E8405B521985C8120633C3EE /* NudgePasswordPickerView.swift */,
 			);
 			path = Nudge;
 			sourceTree = "<group>";
@@ -583,6 +595,10 @@
 				14FC6E502C7DED5600C7BEA5 /* DataTypes+Extensions.swift in Sources */,
 				14288E0C2C6F8EC000B9F80C /* AppIcons.swift in Sources */,
 				B19016242CC15B5000E3F12E /* Constants.swift in Sources */,
+				5D801A1AF37495A88EB59F2E /* NudgeTeamSecret.swift in Sources */,
+				4056511EC8FE68B0B8A7AE0F /* NudgeRoster.swift in Sources */,
+				9F18C9B556E15061567A3991 /* NudgeStats.swift in Sources */,
+				1FB98063B994504FE32D0A59 /* NudgePasswordPickerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -733,9 +749,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Nudge/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Nudge;
@@ -785,9 +799,7 @@
 				DEVELOPMENT_TEAM = Q37KAF726J;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Nudge/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Nudge;

@@ -16,7 +16,7 @@ struct OnboardingFinishView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            Image(systemName: "sparkles")
+            Image(systemName: "hand.wave.fill")
                 .font(.system(size: 60))
                 .foregroundColor(.effectiveAccent)
                 .padding()
