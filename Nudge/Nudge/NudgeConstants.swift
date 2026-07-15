@@ -5,12 +5,8 @@
 
 import Foundation
 
-// Shared 12-char lowercase nonce. Every Ontora teammate's build MUST have the
-// same value here. Rotate by changing the constant and shipping a new build.
-let nudgeNonce = "k4n9pq7vx2tm"
+// Names are no longer hardcoded — users type their own during onboarding,
+// and the roster auto-discovers teammates via "hello" broadcasts on the
+// shared team topic.
 
-let nudgeUsers: [String] = ["Max", "Leon", "David"]
-
-func ntfyTopic(for user: String) -> String {
-    "nudge-ontora-\(user.lowercased())-\(nudgeNonce)"
-}
+let nudgeMaxNameLength = 32

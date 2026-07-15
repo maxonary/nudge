@@ -7,6 +7,7 @@ import SwiftUI
 
 enum OnboardingStep {
     case identity
+    case password
     case finished
 }
 
@@ -20,6 +21,13 @@ struct OnboardingView: View {
             switch step {
             case .identity:
                 NudgeIdentityPickerView {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        step = .password
+                    }
+                }
+                .transition(.opacity)
+            case .password:
+                NudgePasswordPickerView {
                     withAnimation(.easeInOut(duration: 0.4)) {
                         step = .finished
                     }

@@ -18,23 +18,35 @@ struct DynamicNotchApp: App {
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
     @ObservedObject var identity = NudgeIdentity.shared
+    @ObservedObject var teamSecret = NudgeTeamSecret.shared
+    @ObservedObject var stats = NudgeStats.shared
     @Environment(\.openWindow) var openWindow
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
     var body: some Scene {
-        MenuBarExtra("Nudge", systemImage: "hand.wave.fill", isInserted: $showMenuBarIcon) {
+        MenuBarExtra(isInserted: $showMenuBarIcon) {
             if let me = identity.current {
                 Text("You are: \(me)")
-                Button("Switch user…") {
-                    DispatchQueue.main.async {
-                        appDelegate.showIdentityPicker()
-                    }
-                }
             } else {
-                Button("Pick your name…") {
-                    DispatchQueue.main.async {
-                        appDelegate.showIdentityPicker()
-                    }
+                Text("Identity: not set")
+            }
+            if teamSecret.hasPassword {
+                Text("Team password: set ✓")
+            } else {
+                Text("Team password: NOT set")
+            }
+            Divider()
+            Text("Nudges sent: \(stats.mySendsTotal)")
+            Text("Nudges received: \(stats.myReceivedTotal)")
+            Divider()
+            Button("Send a GIF…") {
+                DispatchQueue.main.async {
+                    GifPickerWindowController.shared.showWindow()
+                }
+            }
+            Button("Open onboarding…") {
+                DispatchQueue.main.async {
+                    appDelegate.showOnboarding()
                 }
             }
             Divider()
@@ -48,12 +60,6 @@ struct DynamicNotchApp: App {
                 }
             ))
             Divider()
-            Text("Topic nonce: \(nudgeNonce)")
-            Button("Copy nonce") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(nudgeNonce, forType: .string)
-            }
-            Divider()
             Button("Settings") {
                 DispatchQueue.main.async {
                     SettingsWindowController.shared.showWindow()
@@ -64,25 +70,24 @@ struct DynamicNotchApp: App {
                 NSApplication.shared.terminate(self)
             }
             .keyboardShortcut(KeyEquivalent("Q"), modifiers: .command)
+        } label: {
+            // Just the wave — the counts live inside the menu, not next to the icon.
+            Image(systemName: "hand.wave.fill")
         }
     }
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusItem: NSStatusItem?
     var windows: [String: NSWindow] = [:] // UUID -> NSWindow
     var viewModels: [String: NudgeViewModel] = [:] // UUID -> NudgeViewModel
     var window: NSWindow?
     let vm: NudgeViewModel = .init()
     @ObservedObject var coordinator = NudgeViewCoordinator.shared
-    var whatsNewWindow: NSWindow?
-    var timer: Timer?
     var closeNotchTask: Task<Void, Never>?
     private var previousScreens: [NSScreen]?
     private var onboardingWindowController: NSWindowController?
     private var screenLockedObserver: Any?
     private var screenUnlockedObserver: Any?
-    private var isScreenLocked: Bool = false
     private var windowScreenDidChangeObserver: Any?
     private var identityCancellable: AnyCancellable?
 
@@ -106,57 +111,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func onScreenLocked(_ notification: Notification) {
-        isScreenLocked = true
         if !Defaults[.showOnLockScreen] {
             cleanupWindows()
-        } else {
-            enableSkyLightOnAllWindows()
         }
     }
 
     @MainActor
     func onScreenUnlocked(_ notification: Notification) {
-        isScreenLocked = false
         if !Defaults[.showOnLockScreen] {
             adjustWindowPosition(changeAlpha: true)
-        } else {
-            disableSkyLightOnAllWindows()
-        }
-    }
-    
-    @MainActor
-    private func enableSkyLightOnAllWindows() {
-        if Defaults[.showOnAllDisplays] {
-            windows.values.forEach { window in
-                if let skyWindow = window as? NudgeSkyLightWindow {
-                    skyWindow.enableSkyLight()
-                }
-            }
-        } else {
-            if let skyWindow = window as? NudgeSkyLightWindow {
-                skyWindow.enableSkyLight()
-            }
-        }
-    }
-    
-    @MainActor
-    private func disableSkyLightOnAllWindows() {
-        // Delay disabling SkyLight to avoid flicker during unlock transition
-        Task {
-            try? await Task.sleep(for: .milliseconds(150))
-            await MainActor.run {
-                if Defaults[.showOnAllDisplays] {
-                    self.windows.values.forEach { window in
-                        if let skyWindow = window as? NudgeSkyLightWindow {
-                            skyWindow.disableSkyLight()
-                        }
-                    }
-                } else {
-                    if let skyWindow = self.window as? NudgeSkyLightWindow {
-                        skyWindow.disableSkyLight()
-                    }
-                }
-            }
         }
     }
 
@@ -184,21 +147,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func createNudgeWindow(for screen: NSScreen, with viewModel: NudgeViewModel) -> NSWindow {
         let rect = NSRect(x: 0, y: 0, width: windowSize.width, height: windowSize.height)
         let styleMask: NSWindow.StyleMask = [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]
-        
         let window = NudgeSkyLightWindow(contentRect: rect, styleMask: styleMask, backing: .buffered, defer: false)
-        
-        // Enable SkyLight only when screen is locked
-        if isScreenLocked {
-            window.enableSkyLight()
-        } else {
-            window.disableSkyLight()
-        }
-
         window.contentView = NSHostingView(
             rootView: ContentView()
                 .environmentObject(viewModel)
         )
-
         window.orderFrontRegardless()
         NotchSpaceManager.shared.notchSpace.windows.insert(window)
         return window
@@ -335,20 +288,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             adjustWindowPosition(changeAlpha: true)
         }
 
-        // Start Nudge transport when an identity is set; stop when cleared.
-        identityCancellable = NudgeIdentity.shared.$current
-            .receive(on: RunLoop.main)
-            .sink { user in
-                if let user {
-                    NudgeTransport.shared.startReceiving(as: user)
-                } else {
-                    NudgeTransport.shared.stopReceiving()
-                }
+        // Start Nudge transport only when BOTH identity and team password
+        // are present; stop whenever either is missing.
+        identityCancellable = Publishers.CombineLatest(
+            NudgeIdentity.shared.$current,
+            NudgeTeamSecret.shared.$hasPassword
+        )
+        .receive(on: RunLoop.main)
+        .sink { user, hasPwd in
+            if let user, hasPwd {
+                NudgeTransport.shared.startReceiving(as: user)
+            } else {
+                NudgeTransport.shared.stopReceiving()
             }
+        }
 
+        // Resume onboarding at whichever step is missing.
         if NudgeIdentity.shared.current == nil {
             DispatchQueue.main.async { [weak self] in
-                self?.showOnboardingWindow()
+                self?.showOnboardingWindow(step: .identity)
+            }
+        } else if !NudgeTeamSecret.shared.hasPassword {
+            DispatchQueue.main.async { [weak self] in
+                self?.showOnboardingWindow(step: .password)
             }
         }
 
@@ -356,8 +318,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    func showIdentityPicker() {
-        showOnboardingWindow()
+    func showOnboarding() {
+        // Pick the right step based on what's missing.
+        let step: OnboardingStep
+        if NudgeIdentity.shared.current == nil {
+            step = .identity
+        } else if !NudgeTeamSecret.shared.hasPassword {
+            step = .password
+        } else {
+            step = .identity
+        }
+        showOnboardingWindow(step: step)
     }
 
     func deviceHasNotch() -> Bool {
@@ -456,22 +427,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-    }
-
-    @objc func togglePopover(_ sender: Any?) {
-        if window?.isVisible == true {
-            window?.orderOut(nil)
-        } else {
-            window?.orderFrontRegardless()
-        }
-    }
-
-    @objc func showMenu() {
-        statusItem?.menu?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
-
-    @objc func quitAction() {
-        NSApplication.shared.terminate(self)
     }
 
     private func showOnboardingWindow(step: OnboardingStep = .identity) {
