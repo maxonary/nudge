@@ -21,7 +21,7 @@ concurrency:
 jobs:
   release:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,13 +45,44 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Import Developer ID certificate
+        id: cert
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/build_certificate.p12"
+          KC="$RUNNER_TEMP/app-signing.keychain-db"
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KC" >/dev/null
+          security list-keychain -d user -s "$KC"
+          # Notarization requires a "Developer ID Application" identity — an
+          # "Apple Development" cert will build but cannot be notarized.
+          IDENTITY=$(security find-identity -v -p codesigning "$KC" \
+            | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.+)".*/\1/')
+          if [[ -z "${IDENTITY}" ]]; then
+            echo "::error::No 'Developer ID Application' identity in BUILD_CERTIFICATE_BASE64. Notarization needs a Developer ID Application certificate. Identities present:"
+            security find-identity -v -p codesigning "$KC" || true
+            exit 1
+          fi
+          echo "Signing identity: ${IDENTITY}"
+          echo "identity=${IDENTITY}" >> "$GITHUB_OUTPUT"
+
       - name: Resolve Swift packages
         run: xcodebuild -resolvePackageDependencies -project Nudge.xcodeproj
 
-      - name: Archive (ad-hoc signed)
+      - name: Archive (Developer ID, hardened runtime)
         env:
           VERSION: ${{ steps.version.outputs.version }}
           KLIPY_API_KEY: ${{ secrets.KLIPY_API_KEY }}
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -61,54 +92,50 @@ jobs:
             -destination 'generic/platform=macOS' \
             -archivePath build/Nudge.xcarchive \
             KLIPY_API_KEY="${KLIPY_API_KEY}" \
-            CODE_SIGN_IDENTITY="-" \
             CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="${SIGN_IDENTITY}" \
+            DEVELOPMENT_TEAM="${TEAM_ID}" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             CODE_SIGNING_REQUIRED=YES \
             CODE_SIGNING_ALLOWED=YES \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
             ENABLE_HARDENED_RUNTIME=YES \
+            OTHER_CODE_SIGN_FLAGS="--timestamp" \
             MARKETING_VERSION="${VERSION}" \
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
-      - name: Locate built app
+      - name: Locate app
         id: app
         run: |
           set -euo pipefail
           APP_PATH=$(find build/Nudge.xcarchive/Products/Applications -maxdepth 1 -name '*.app' | head -n 1)
-          if [[ -z "${APP_PATH}" ]]; then
-            echo "::error::No .app found in archive"
-            exit 1
-          fi
+          if [[ -z "${APP_PATH}" ]]; then echo "::error::No .app in archive"; exit 1; fi
           echo "app_path=${APP_PATH}" >> "$GITHUB_OUTPUT"
           echo "Found: ${APP_PATH}"
+          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
-      - name: Rename to Nudge.app
-        id: rename
+      - name: Notarize + staple
         env:
           APP_PATH: ${{ steps.app.outputs.app_path }}
+          APPLE_ID_EMAIL: ${{ secrets.APPLE_ID_EMAIL }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          DIR="$(dirname "${APP_PATH}")"
-          DEST="${DIR}/Nudge.app"
-          if [[ "${APP_PATH}" != "${DEST}" ]]; then
-            mv "${APP_PATH}" "${DEST}"
-          fi
-          echo "app_path=${DEST}" >> "$GITHUB_OUTPUT"
-          echo "Renamed to: ${DEST}"
-
-      - name: Re-sign after rename (ad-hoc)
-        env:
-          APP_PATH: ${{ steps.rename.outputs.app_path }}
-        run: |
-          set -euo pipefail
-          codesign --force --deep --sign - --options runtime "${APP_PATH}"
-          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+          ditto -c -k --keepParent "${APP_PATH}" "$RUNNER_TEMP/notarize.zip"
+          echo "Submitting to Apple notary service (this can take a few minutes)…"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "${APPLE_ID_EMAIL}" \
+            --password "${APPLE_ID_PASSWORD}" \
+            --team-id "${TEAM_ID}" \
+            --wait
+          xcrun stapler staple "${APP_PATH}"
+          xcrun stapler validate "${APP_PATH}"
+          spctl -a -vvv --type execute "${APP_PATH}" || true
 
       - name: Zip
         id: zip
         env:
-          APP_PATH: ${{ steps.rename.outputs.app_path }}
+          APP_PATH: ${{ steps.app.outputs.app_path }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
@@ -129,19 +156,13 @@ jobs:
           SHA=$(awk '{print $1}' "dist/${ZIP_NAME}.sha256")
           NOTES_FILE="dist/release-notes.md"
           cat > "${NOTES_FILE}" <<EOF
-          Internal Nudge build for Ontora.
+          Internal Nudge build for Ontora — signed with Developer ID and notarized by Apple.
 
-          ## Install (Leon / David)
+          ## Install
 
           1. Download \`${ZIP_NAME}\` from the Assets below.
           2. Unzip and drag \`Nudge.app\` into \`/Applications\`.
-          3. Clear Gatekeeper quarantine (one-time; we're ad-hoc signed, not notarized):
-
-             \`\`\`bash
-             xattr -dr com.apple.quarantine /Applications/Nudge.app
-             open /Applications/Nudge.app
-             \`\`\`
-
+          3. Launch it — no Gatekeeper workaround needed (notarized + stapled).
           4. Pick your name on first launch and grant notification permission.
 
           ## Verify download integrity
@@ -152,7 +173,7 @@ jobs:
           # ${SHA}  ${ZIP_NAME}
           \`\`\`
 
-          Built from commit \`${{ github.sha }}\` on macOS runner.
+          Built from commit \`${{ github.sha }}\` on a macOS runner.
           EOF
           echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
 
@@ -165,12 +186,14 @@ jobs:
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
         run: |
           set -euo pipefail
-          # Create the tag at the current commit if it doesn't exist
-          # (workflow_dispatch path may not have a tag yet)
-          if ! git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
-            git tag "${TAG}"
-            git push origin "${TAG}"
+          # Replace any existing release/tag for this version (e.g. an earlier
+          # ad-hoc build) so the notarized build supersedes it cleanly.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release delete "${TAG}" --yes --cleanup-tag
           fi
+          git push origin ":refs/tags/${TAG}" 2>/dev/null || true
+          git tag -f "${TAG}"
+          git push -f origin "${TAG}"
           gh release create "${TAG}" \
             "dist/${ZIP_NAME}" \
             "dist/${ZIP_NAME}.sha256" \
