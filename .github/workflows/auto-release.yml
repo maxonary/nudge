@@ -1,0 +1,60 @@
+name: Auto-release on merge to main
+
+# Every push to main (i.e. a merged PR) cuts a new versioned release:
+# auto-increment the patch from the latest v* tag, then hand off to
+# nudge-release.yml (which signs, notarizes, and publishes).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part to bump (patch/minor/major)'
+        required: false
+        default: patch
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: v
+        env:
+          BUMP: ${{ github.event.inputs.bump || 'patch' }}
+        run: |
+          set -euo pipefail
+          latest=$(git tag -l 'v*' | sed 's/^v//' | sort -V | tail -1)
+          if [[ -z "${latest}" ]]; then
+            next="0.1.0"
+          else
+            IFS=. read -r MA MI PA <<< "${latest}"
+            case "${BUMP}" in
+              major) next="$((MA+1)).0.0" ;;
+              minor) next="${MA}.$((MI+1)).0" ;;
+              *)     next="${MA}.${MI}.$((PA+1))" ;;
+            esac
+          fi
+          echo "version=${next}" >> "$GITHUB_OUTPUT"
+          echo "Latest tag: v${latest:-<none>} → next: v${next}"
+
+      - name: Dispatch signed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching nudge-release for v${VERSION}"
+          gh workflow run nudge-release.yml --ref main -f version="${VERSION}"
