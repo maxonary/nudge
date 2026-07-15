@@ -1,9 +1,9 @@
 name: Build
 
+# PR build check + downloadable artifact. Releases are handled separately
+# (auto-release.yml on merge to main → nudge-release.yml). No nightly.
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -61,19 +61,3 @@ jobs:
           path: ${{ steps.package.outputs.zip_name }}
           if-no-files-found: error
           retention-days: 14
-
-      # On merge to main, publish/refresh a rolling "nightly" pre-release.
-      - name: Publish nightly pre-release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          name: Nightly (main)
-          prerelease: true
-          fail_on_unmatched_files: true
-          body: |
-            Automated unsigned build from the latest `main` (${{ github.sha }}).
-
-            ⚠️ Unsigned: on first launch, right-click the app → Open (or allow it
-            in System Settings → Privacy & Security) to bypass Gatekeeper.
-          files: ${{ steps.package.outputs.zip_name }}
