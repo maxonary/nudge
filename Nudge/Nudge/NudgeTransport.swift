@@ -20,6 +20,7 @@ import os
 struct NudgePing: Equatable {
     let sender: String
     let message: String?
+    let gif: String?
     let receivedAt: Date
 }
 
@@ -31,13 +32,14 @@ private struct NudgePayload: Codable {
     let to: String?             // present only on type=="ping"
     let sends: Int              // sender's all-time send total (for the leaderboard)
     let msg: String?            // optional free-text message (ping only); omitted when nil
+    let gif: String?            // optional GIF URL (ping only); omitted when nil
 
-    static func ping(from sender: String, to recipient: String, sends: Int, msg: String?) -> NudgePayload {
-        NudgePayload(v: 2, type: "ping", sender: sender, to: recipient, sends: sends, msg: msg)
+    static func ping(from sender: String, to recipient: String, sends: Int, msg: String?, gif: String?) -> NudgePayload {
+        NudgePayload(v: 2, type: "ping", sender: sender, to: recipient, sends: sends, msg: msg, gif: gif)
     }
 
     static func hello(from sender: String, sends: Int) -> NudgePayload {
-        NudgePayload(v: 2, type: "hello", sender: sender, to: nil, sends: sends, msg: nil)
+        NudgePayload(v: 2, type: "hello", sender: sender, to: nil, sends: sends, msg: nil, gif: nil)
     }
 }
 
@@ -64,7 +66,7 @@ final class NudgeTransport: ObservableObject {
 
     // MARK: - Public
 
-    func send(to recipient: String, from sender: String, message: String? = nil) async throws {
+    func send(to recipient: String, from sender: String, message: String? = nil, gif: String? = nil) async throws {
         guard let topic = NudgeTeamSecret.shared.teamTopic else {
             log.error("send aborted: no team password set")
             throw URLError(.userAuthenticationRequired)
@@ -73,11 +75,13 @@ final class NudgeTransport: ObservableObject {
         // Increment first so the count we broadcast already includes this ping.
         NudgeStats.shared.recordSent(to: recipient)
         let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let gifTrimmed = gif?.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = NudgePayload.ping(
             from: sender,
             to: recipient,
             sends: NudgeStats.shared.mySendsTotal,
-            msg: (trimmed?.isEmpty == false) ? trimmed : nil
+            msg: (trimmed?.isEmpty == false) ? trimmed : nil,
+            gif: (gifTrimmed?.isEmpty == false) ? gifTrimmed : nil
         )
         try await post(payload: payload, to: topic, label: "ping->\(recipient)")
     }
@@ -183,7 +187,7 @@ final class NudgeTransport: ObservableObject {
                 peer: payload.sender,
                 totalSends: payload.sends
             )
-            self.lastIncoming = NudgePing(sender: payload.sender, message: payload.msg, receivedAt: Date())
+            self.lastIncoming = NudgePing(sender: payload.sender, message: payload.msg, gif: payload.gif, receivedAt: Date())
         default:
             log.info("ignoring unknown payload type: \(payload.type)")
         }

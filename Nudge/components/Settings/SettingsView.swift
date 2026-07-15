@@ -51,6 +51,7 @@ struct NudgeSettingsPane: View {
     @ObservedObject var roster = NudgeRoster.shared
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
+    @Default(.tenorApiKey) var tenorApiKey
 
     @State private var nameDraft: String = NudgeIdentity.shared.current ?? ""
     @State private var nameError: String?
@@ -230,6 +231,17 @@ struct NudgeSettingsPane: View {
                 Toggle("Show macOS notification (fallback)", isOn: $showBackupNotification)
             } header: {
                 Text("Receive behavior")
+            }
+
+            Section {
+                SecureField("Tenor API key", text: $tenorApiKey)
+                    .textFieldStyle(.roundedBorder)
+            } header: {
+                Text("GIFs")
+            } footer: {
+                Text("Paste a Tenor API key to search and send GIFs. Get one free at developers.google.com/tenor — stored locally, never sent to teammates.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

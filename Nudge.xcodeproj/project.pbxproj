@@ -54,6 +54,10 @@
 		B1C448962C9712C4001F0858 /* ActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C448952C9712C4001F0858 /* ActionBar.swift */; };
 		B1CE8CFE2C6F659400DD9871 /* KeyboardShortcutsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1CE8CFD2C6F659400DD9871 /* KeyboardShortcutsHelper.swift */; };
 		B1FEB4992C7686630066EBBC /* PanGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1FEB4982C7686630066EBBC /* PanGesture.swift */; };
+		B8AC936D553061A2C59E57CE /* NudgeGifService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A70506F0C82739025A3466C /* NudgeGifService.swift */; };
+		F25174743AD7C7244255A32F /* GifPickerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2E3C198DF89E1F33A29653 /* GifPickerWindowController.swift */; };
+		F7291FB50E023ED8310236B8 /* NudgeGifPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B4A5914D74B087D00FF461 /* NudgeGifPickerView.swift */; };
+		FBE51232E3221DE7A6FC71DF /* AnimatedGifView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89B24867B6257865F7198E6 /* AnimatedGifView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -101,7 +105,9 @@
 		14D570C82C5F38890011E668 /* NudgeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeViewModel.swift; sourceTree = "<group>"; };
 		14E9FEAD2C7325770062E83F /* Button+Bouncing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Button+Bouncing.swift"; sourceTree = "<group>"; };
 		14FC6E4F2C7DED5600C7BEA5 /* DataTypes+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataTypes+Extensions.swift"; sourceTree = "<group>"; };
+		1A70506F0C82739025A3466C /* NudgeGifService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeGifService.swift; sourceTree = "<group>"; };
 		407FCC9217CDCECC553F619E /* NudgeStats.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeStats.swift; sourceTree = "<group>"; };
+		57B4A5914D74B087D00FF461 /* NudgeGifPickerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeGifPickerView.swift; sourceTree = "<group>"; };
 		74A93A85D5B4F91DCE1C994D /* NudgeRoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeRoster.swift; sourceTree = "<group>"; };
 		AAA000000000000000000010 /* NudgeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeConstants.swift; sourceTree = "<group>"; };
 		AAA000000000000000000011 /* NudgeIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeIdentity.swift; sourceTree = "<group>"; };
@@ -117,8 +123,10 @@
 		B1C448952C9712C4001F0858 /* ActionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionBar.swift; sourceTree = "<group>"; };
 		B1CE8CFD2C6F659400DD9871 /* KeyboardShortcutsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutsHelper.swift; sourceTree = "<group>"; };
 		B1FEB4982C7686630066EBBC /* PanGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanGesture.swift; sourceTree = "<group>"; };
+		C89B24867B6257865F7198E6 /* AnimatedGifView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnimatedGifView.swift; sourceTree = "<group>"; };
 		E8405B521985C8120633C3EE /* NudgePasswordPickerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgePasswordPickerView.swift; sourceTree = "<group>"; };
 		F41DF965EE177D3892EF7B81 /* NudgeTeamSecret.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeTeamSecret.swift; sourceTree = "<group>"; };
+		FA2E3C198DF89E1F33A29653 /* GifPickerWindowController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GifPickerWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -243,6 +251,7 @@
 				B186542F2C6F455E000B926A /* Notch */,
 				9A0887332C7AFF7E00C160EA /* Tabs */,
 				B186542E2C6F453B000B926A /* Music */,
+				6CC064DE76441B5399B791BD /* GifPicker */,
 			);
 			path = components;
 			sourceTree = "<group>";
@@ -358,6 +367,16 @@
 			path = models;
 			sourceTree = "<group>";
 		};
+		6CC064DE76441B5399B791BD /* GifPicker */ = {
+			isa = PBXGroup;
+			children = (
+				57B4A5914D74B087D00FF461 /* NudgeGifPickerView.swift */,
+				FA2E3C198DF89E1F33A29653 /* GifPickerWindowController.swift */,
+			);
+			name = GifPicker;
+			path = GifPicker;
+			sourceTree = "<group>";
+		};
 		9A0887332C7AFF7E00C160EA /* Tabs */ = {
 			isa = PBXGroup;
 			children = (
@@ -389,6 +408,8 @@
 				74A93A85D5B4F91DCE1C994D /* NudgeRoster.swift */,
 				407FCC9217CDCECC553F619E /* NudgeStats.swift */,
 				E8405B521985C8120633C3EE /* NudgePasswordPickerView.swift */,
+				1A70506F0C82739025A3466C /* NudgeGifService.swift */,
+				C89B24867B6257865F7198E6 /* AnimatedGifView.swift */,
 			);
 			path = Nudge;
 			sourceTree = "<group>";
@@ -599,6 +620,10 @@
 				4056511EC8FE68B0B8A7AE0F /* NudgeRoster.swift in Sources */,
 				9F18C9B556E15061567A3991 /* NudgeStats.swift in Sources */,
 				1FB98063B994504FE32D0A59 /* NudgePasswordPickerView.swift in Sources */,
+				B8AC936D553061A2C59E57CE /* NudgeGifService.swift in Sources */,
+				FBE51232E3221DE7A6FC71DF /* AnimatedGifView.swift in Sources */,
+				F7291FB50E023ED8310236B8 /* NudgeGifPickerView.swift in Sources */,
+				F25174743AD7C7244255A32F /* GifPickerWindowController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

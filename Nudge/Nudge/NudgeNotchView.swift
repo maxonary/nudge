@@ -52,7 +52,10 @@ struct NudgeNotchView: View {
                     .foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 8) {
-                    messageField
+                    HStack(spacing: 8) {
+                        messageField
+                        gifButton
+                    }
                     HStack(spacing: 10) {
                         ForEach(others, id: \.self) { other in
                             pingButton(other)
@@ -83,6 +86,24 @@ struct NudgeNotchView: View {
             )
     }
 
+    private var gifButton: some View {
+        Button {
+            GifPickerWindowController.shared.showWindow()
+        } label: {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                )
+                .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+        .help("Send a GIF")
+    }
+
     private func pingButton(_ recipient: String) -> some View {
         let isSending = sending == recipient
         return Button {
@@ -106,28 +127,35 @@ struct NudgeNotchView: View {
     }
 
     private func incomingView(for ping: NudgePing) -> some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.9))
-                    .frame(width: 26, height: 26)
-                Text(String(ping.sender.prefix(1)))
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-            VStack(alignment: .center, spacing: 2) {
-                Text("\(ping.sender) is waving")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                if let message = ping.message, !message.isEmpty {
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(2)
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.9))
+                        .frame(width: 26, height: 26)
+                    Text(String(ping.sender.prefix(1)))
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
                 }
-                Text(ping.receivedAt.formatted(date: .omitted, time: .shortened))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .center, spacing: 2) {
+                    Text("\(ping.sender) is waving")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    if let message = ping.message, !message.isEmpty {
+                        Text(message)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(2)
+                    }
+                    Text(ping.receivedAt.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let gif = ping.gif, let url = URL(string: gif) {
+                AnimatedGifView(url: url)
+                    .frame(maxWidth: 200, maxHeight: 90)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
         .frame(maxWidth: .infinity)

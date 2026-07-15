@@ -201,7 +201,8 @@ struct ContentView: View {
     private func handleIncoming(_ ping: NudgePing?) {
         guard let ping else { return }
         autoCloseTask?.cancel()
-        NudgeNotifier.postBackup(sender: ping.sender, message: ping.message)
+        let backupText = ping.message ?? (ping.gif != nil ? "sent a GIF 🎬" : nil)
+        NudgeNotifier.postBackup(sender: ping.sender, message: backupText)
         if Defaults[.nudgePlaySoundOnReceive] {
             NSSound(named: NSSound.Name("Pop"))?.play()
         }
