@@ -186,10 +186,14 @@ jobs:
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
         run: |
           set -euo pipefail
-          if ! git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
-            git tag "${TAG}"
-            git push origin "${TAG}"
+          # Replace any existing release/tag for this version (e.g. an earlier
+          # ad-hoc build) so the notarized build supersedes it cleanly.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release delete "${TAG}" --yes --cleanup-tag
           fi
+          git push origin ":refs/tags/${TAG}" 2>/dev/null || true
+          git tag -f "${TAG}"
+          git push -f origin "${TAG}"
           gh release create "${TAG}" \
             "dist/${ZIP_NAME}" \
             "dist/${ZIP_NAME}.sha256" \
