@@ -6,8 +6,8 @@ public struct AgentAttentionState: Codable, Equatable, Sendable {
     public private(set) var drafts: [AgentAnswer?]
     public private(set) var questionIndex: Int
     public var visible: Bool
-    public var isHovering: Bool
-    public var isEditing: Bool
+    public private(set) var isHovering: Bool
+    public private(set) var isEditing: Bool
     public private(set) var collapseGeneration: Int
 
     public init(
@@ -69,6 +69,24 @@ public struct AgentAttentionState: Codable, Equatable, Sendable {
 
     public mutating func cancelCollapse() {
         collapseGeneration += 1
+    }
+
+    public mutating func setHovering(_ isHovering: Bool) {
+        guard self.isHovering != isHovering else { return }
+
+        self.isHovering = isHovering
+        if isHovering {
+            cancelCollapse()
+        }
+    }
+
+    public mutating func setEditing(_ isEditing: Bool) {
+        guard self.isEditing != isEditing else { return }
+
+        self.isEditing = isEditing
+        if isEditing {
+            cancelCollapse()
+        }
     }
 
     @discardableResult
