@@ -77,8 +77,7 @@ public struct ClaudeConnectorRegistryState: Equatable, Sendable {
         )
     }
 
-    public var disconnectPlan: ClaudeDisconnectPlan? {
-        if case .conflict = marketplace { return nil }
+    public var disconnectPlan: ClaudeDisconnectPlan {
         return ClaudeDisconnectPlan(
             uninstallPlugin: pluginInstalledForUser,
             removeMarketplace: marketplace == .owned
@@ -141,9 +140,7 @@ public func nudgeClaudeMarketplaceRegistration(
           !actualPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return .conflict(actualPath: nil) }
 
-    let standardizedActual = URL(fileURLWithPath: actualPath).standardizedFileURL.path
-    let standardizedExpected = URL(fileURLWithPath: expectedInstallPath).standardizedFileURL.path
-    return standardizedActual == standardizedExpected
+    return actualPath == expectedInstallPath
         ? .owned
         : .conflict(actualPath: actualPath)
 }

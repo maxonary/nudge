@@ -130,11 +130,11 @@ final class AgentConnectorManager: ObservableObject {
             switch source {
             case .claudeCode:
                 let registryState = try claudeRegistryState()
-                guard let plan = registryState.disconnectPlan else {
-                    throw marketplaceConflictError(for: registryState.marketplace)
-                }
+                let plan = registryState.disconnectPlan
                 guard plan.uninstallPlugin || plan.removeMarketplace else {
-                    claudeCodeStatus = .notInstalled
+                    claudeCodeStatus = disconnectedClaudeStatus(
+                        marketplace: registryState.marketplace
+                    )
                     return
                 }
                 let executable = try discoverClaudeExecutable()
@@ -164,7 +164,9 @@ final class AgentConnectorManager: ObservableObject {
                 if !failures.isEmpty {
                     throw ConnectorRuntimeError.cleanupFailed(failures)
                 }
-                claudeCodeStatus = .notInstalled
+                claudeCodeStatus = disconnectedClaudeStatus(
+                    marketplace: registryState.marketplace
+                )
 
             case .codex:
                 let hooksURL = codexHooksURL
@@ -264,6 +266,13 @@ final class AgentConnectorManager: ObservableObject {
             return .invalidClaudeRegistry("known_marketplaces.json")
         }
         return .marketplaceConflict(actualPath: actualPath)
+    }
+
+    private func disconnectedClaudeStatus(
+        marketplace: ClaudeMarketplaceRegistration
+    ) -> AgentConnectorStatus {
+        guard case .conflict = marketplace else { return .notInstalled }
+        return .failed(clearMessage(for: marketplaceConflictError(for: marketplace)))
     }
 
     private func bundledHelperData() throws -> Data {

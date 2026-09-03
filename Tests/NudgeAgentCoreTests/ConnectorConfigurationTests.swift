@@ -207,6 +207,18 @@ struct ConnectorConfigurationTests {
             }
             """
         )
+        let canonicallyEquivalentButNotLiteral = try jsonObject(
+            """
+            {
+              "version": 2,
+              "nudge-local": {
+                "source": {"source": "directory", "path": "/stable/other/../ClaudeMarketplace"},
+                "installLocation": "/stable/other/../ClaudeMarketplace",
+                "lastUpdated": "2026-09-03T10:00:00Z"
+              }
+            }
+            """
+        )
         let owned = try jsonObject(
             """
             {
@@ -228,6 +240,10 @@ struct ConnectorConfigurationTests {
             in: foreignSameName,
             expectedInstallPath: expectedPath
         ) == .conflict(actualPath: "/someone-else"))
+        #expect(nudgeClaudeMarketplaceRegistration(
+            in: canonicallyEquivalentButNotLiteral,
+            expectedInstallPath: expectedPath
+        ) == .conflict(actualPath: "/stable/other/../ClaudeMarketplace"))
         #expect(nudgeClaudeMarketplaceRegistration(
             in: owned,
             expectedInstallPath: expectedPath
@@ -266,7 +282,26 @@ struct ConnectorConfigurationTests {
         #expect(marketplaceOnly.connectPlan == .init(addMarketplace: false, installPlugin: true))
         #expect(marketplaceOnly.disconnectPlan == .init(uninstallPlugin: false, removeMarketplace: true))
         #expect(conflict.connectPlan == nil)
-        #expect(conflict.disconnectPlan == nil)
+        #expect(conflict.disconnectPlan == .init(uninstallPlugin: true, removeMarketplace: false))
+    }
+
+    @Test
+    func claudeDisconnectWithForeignMarketplaceRunsOnlyExactPluginCleanup() {
+        let state = ClaudeConnectorRegistryState(
+            pluginInstalledForUser: true,
+            marketplace: .conflict(actualPath: "/someone-else")
+        )
+        let plan = state.disconnectPlan
+        var attempts: [ClaudeCleanupAction] = []
+
+        let failures = executeClaudeDisconnectPlan(
+            plan,
+            uninstallPlugin: { attempts.append(.uninstallPlugin) },
+            removeMarketplace: { attempts.append(.removeMarketplace) }
+        )
+
+        #expect(attempts == [.uninstallPlugin])
+        #expect(failures.isEmpty)
     }
 
     @Test
