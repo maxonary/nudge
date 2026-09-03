@@ -24,6 +24,17 @@ def claude_stop_fixture():
     }
 
 
+def claude_stop_without_prompt_id_fixture():
+    return {
+        "session_id": "legacy-claude-session",
+        "transcript_path": "/Users/max/.claude/projects/atlas/session.jsonl",
+        "cwd": "/work/atlas",
+        "hook_event_name": "Stop",
+        "stop_hook_active": False,
+        "last_assistant_message": "Legacy Claude completion.",
+    }
+
+
 def codex_stop_fixture():
     return {
         "session_id": "codex-session",
@@ -131,6 +142,20 @@ class HookHelperTests(unittest.TestCase):
                 "message": "Implemented the bridge.",
             },
         })
+
+    def test_claude_stop_without_prompt_id_uses_deterministic_legacy_id(self):
+        event = claude_stop_without_prompt_id_fixture()
+
+        first = self.module.normalize_event("claude", event, {})
+        second = self.module.normalize_event("claude", event, {})
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertEqual(
+            first["event"]["payload"]["id"],
+            "claudeCode:legacy-claude-session:9981e90f59ef",
+        )
+        self.assertEqual(second["event"]["payload"]["id"], first["event"]["payload"]["id"])
 
     def test_codex_stop_normalizes_to_completion(self):
         envelope = self.module.normalize_event("codex", codex_stop_fixture(), {})

@@ -36,13 +36,20 @@ public final class AgentBridgeSession: @unchecked Sendable {
     }
 
     private let lock = NSLock()
+    fileprivate let id = UUID()
     private let ioQueue: DispatchQueue
+    private let onFinish: @Sendable (UUID) -> Void
     private var fileDescriptor: Int32
     private var isFinished = false
 
-    fileprivate init(fileDescriptor: Int32, ioQueue: DispatchQueue) {
+    fileprivate init(
+        fileDescriptor: Int32,
+        ioQueue: DispatchQueue,
+        onFinish: @escaping @Sendable (UUID) -> Void
+    ) {
         self.fileDescriptor = fileDescriptor
         self.ioQueue = ioQueue
+        self.onFinish = onFinish
     }
 
     public func respond(_ response: AgentBridgeResponse) {
@@ -68,13 +75,14 @@ public final class AgentBridgeSession: @unchecked Sendable {
         }
     }
 
-    fileprivate func markPeerDisconnected() -> Bool {
+    fileprivate var isPending: Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard !isFinished else { return false }
-        isFinished = true
-        fileDescriptor = -1
-        return true
+        return !isFinished
+    }
+
+    fileprivate func claimPeerDisconnectedFileDescriptor() -> Int32? {
+        claimFileDescriptor()
     }
 
     private func finish(with response: Data) {
@@ -90,11 +98,15 @@ public final class AgentBridgeSession: @unchecked Sendable {
 
     private func claimFileDescriptor() -> Int32? {
         lock.lock()
-        defer { lock.unlock() }
-        guard !isFinished, fileDescriptor >= 0 else { return nil }
+        guard !isFinished, fileDescriptor >= 0 else {
+            lock.unlock()
+            return nil
+        }
         isFinished = true
         let descriptor = fileDescriptor
         fileDescriptor = -1
+        lock.unlock()
+        onFinish(id)
         return descriptor
     }
 
@@ -127,6 +139,11 @@ public final class AgentBridgeSession: @unchecked Sendable {
 }
 
 public final class AgentBridgeServer: @unchecked Sendable {
+    private struct SocketIdentity: Equatable {
+        let device: dev_t
+        let inode: ino_t
+    }
+
     public typealias EventHandler = @MainActor @Sendable (
         AgentEventEnvelope,
         AgentBridgeSession
@@ -153,7 +170,9 @@ public final class AgentBridgeServer: @unchecked Sendable {
         attributes: .concurrent
     )
     private var listeningFileDescriptor: Int32 = -1
+    private var listeningSocketIdentity: SocketIdentity?
     private var runID: UUID?
+    private var sessions: [UUID: AgentBridgeSession] = [:]
 
     public init() {}
 
@@ -183,16 +202,23 @@ public final class AgentBridgeServer: @unchecked Sendable {
     public func stop() {
         stateLock.lock()
         let descriptor = listeningFileDescriptor
+        let identity = listeningSocketIdentity
+        let liveSessions = Array(sessions.values)
         listeningFileDescriptor = -1
+        listeningSocketIdentity = nil
         runID = nil
+        sessions.removeAll()
         stateLock.unlock()
 
+        liveSessions.forEach { $0.close() }
         controlQueue.async {
             if descriptor >= 0 {
                 _ = Darwin.shutdown(descriptor, SHUT_RDWR)
                 _ = Darwin.close(descriptor)
             }
-            Self.unlinkExactSocketPath(Self.socketPath)
+            if let identity {
+                Self.unlinkOwnedSocket(at: Self.socketPath, matching: identity)
+            }
         }
     }
 
@@ -214,7 +240,10 @@ public final class AgentBridgeServer: @unchecked Sendable {
             setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size))
         }
 
-        Self.unlinkExactSocketPath(path)
+        guard Self.removeOwnedSocketIfPresent(at: path) else {
+            _ = Darwin.close(descriptor)
+            return
+        }
 
         var address = sockaddr_un()
         address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
@@ -234,11 +263,19 @@ public final class AgentBridgeServer: @unchecked Sendable {
                 Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        guard bindResult == 0,
-              Darwin.chmod(path, 0o600) == 0,
+        guard bindResult == 0 else {
+            _ = Darwin.close(descriptor)
+            return
+        }
+
+        guard let identity = Self.ownedSocketIdentity(at: path) else {
+            _ = Darwin.close(descriptor)
+            return
+        }
+        guard Darwin.chmod(path, 0o600) == 0,
               Darwin.listen(descriptor, SOMAXCONN) == 0 else {
             _ = Darwin.close(descriptor)
-            Self.unlinkExactSocketPath(path)
+            Self.unlinkOwnedSocket(at: path, matching: identity)
             return
         }
 
@@ -246,12 +283,13 @@ public final class AgentBridgeServer: @unchecked Sendable {
         let shouldRun = self.runID == runID
         if shouldRun {
             listeningFileDescriptor = descriptor
+            listeningSocketIdentity = identity
         }
         stateLock.unlock()
 
         guard shouldRun else {
             _ = Darwin.close(descriptor)
-            Self.unlinkExactSocketPath(path)
+            Self.unlinkOwnedSocket(at: path, matching: identity)
             return
         }
 
@@ -283,50 +321,83 @@ public final class AgentBridgeServer: @unchecked Sendable {
                 setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size))
             }
 
+            let session = AgentBridgeSession(
+                fileDescriptor: client,
+                ioQueue: connectionQueue,
+                onFinish: { [weak self] sessionID in
+                    self?.removeSession(sessionID)
+                }
+            )
+            guard register(session, for: runID) else {
+                session.close()
+                continue
+            }
+
             connectionQueue.async { [weak self] in
                 guard let self else {
-                    AgentBridgeServer.closeSocket(client)
+                    session.close()
                     return
                 }
-                self.handleConnection(client, onEvent: onEvent, onDisconnect: onDisconnect)
+                self.handleConnection(
+                    client,
+                    session: session,
+                    onEvent: onEvent,
+                    onDisconnect: onDisconnect
+                )
             }
         }
     }
 
     private func handleConnection(
         _ descriptor: Int32,
+        session: AgentBridgeSession,
         onEvent: @escaping EventHandler,
         onDisconnect: DisconnectHandler?
     ) {
         guard let data = readLine(from: descriptor),
               let envelope = try? JSONDecoder().decode(AgentEventEnvelope.self, from: data),
-              envelope.protocolVersion == 1 else {
-            Self.closeSocket(descriptor)
+              envelope.protocolVersion == 1,
+              session.isPending else {
+            session.close()
             return
         }
 
-        let session = AgentBridgeSession(
-            fileDescriptor: descriptor,
-            ioQueue: connectionQueue
-        )
+        let eventDelivered = DispatchSemaphore(value: 0)
         Task { @MainActor in
             onEvent(envelope, session)
+            eventDelivered.signal()
         }
+        eventDelivered.wait()
 
         guard envelope.kind != .completion else {
             session.close()
             return
         }
 
+        guard session.isPending else { return }
         waitForPeerDisconnect(descriptor)
-        if session.markPeerDisconnected() {
-            Self.closeSocket(descriptor)
+        if let disconnectedDescriptor = session.claimPeerDisconnectedFileDescriptor() {
+            Self.closeSocket(disconnectedDescriptor)
             if let onDisconnect {
                 Task { @MainActor in
                     onDisconnect(envelope, session)
                 }
             }
         }
+    }
+
+    private func register(_ session: AgentBridgeSession, for candidateRunID: UUID) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard runID == candidateRunID else { return false }
+        sessions[session.id] = session
+        return true
+    }
+
+    private func removeSession(_ sessionID: UUID) {
+        stateLock.lock()
+        sessions.removeValue(forKey: sessionID)
+        stateLock.unlock()
     }
 
     private func readLine(from descriptor: Int32) -> Data? {
@@ -372,11 +443,36 @@ public final class AgentBridgeServer: @unchecked Sendable {
         return runID == candidate && listeningFileDescriptor == descriptor
     }
 
-    private static func unlinkExactSocketPath(_ path: String) {
-        guard path == Self.socketPath else { return }
+    private static func removeOwnedSocketIfPresent(at path: String) -> Bool {
+        guard path == Self.socketPath else { return false }
+        var metadata = stat()
+        let result = path.withCString { Darwin.lstat($0, &metadata) }
+        if result != 0 {
+            return errno == ENOENT
+        }
+        guard isOwnedSocket(metadata) else { return false }
+        return path.withCString { Darwin.unlink($0) } == 0 || errno == ENOENT
+    }
+
+    private static func ownedSocketIdentity(at path: String) -> SocketIdentity? {
+        guard path == Self.socketPath else { return nil }
+        var metadata = stat()
+        guard path.withCString({ Darwin.lstat($0, &metadata) }) == 0,
+              isOwnedSocket(metadata) else {
+            return nil
+        }
+        return SocketIdentity(device: metadata.st_dev, inode: metadata.st_ino)
+    }
+
+    private static func unlinkOwnedSocket(at path: String, matching identity: SocketIdentity) {
+        guard ownedSocketIdentity(at: path) == identity else { return }
         path.withCString { pointer in
             _ = Darwin.unlink(pointer)
         }
+    }
+
+    private static func isOwnedSocket(_ metadata: stat) -> Bool {
+        (metadata.st_mode & S_IFMT) == S_IFSOCK && metadata.st_uid == geteuid()
     }
 
     private static func closeSocket(_ descriptor: Int32) {

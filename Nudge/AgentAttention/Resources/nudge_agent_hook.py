@@ -2,6 +2,7 @@
 """Fail-open local bridge for Claude Code and Codex lifecycle hooks."""
 
 import copy
+import hashlib
 import json
 import os
 import socket
@@ -50,7 +51,17 @@ def normalize_event(source, hook_input, environ=None):
         session_id = hook_input.get("session_id")
         turn_key = "prompt_id" if source == "claude" else "turn_id"
         turn_id = hook_input.get(turn_key)
-        if not isinstance(session_id, str) or not isinstance(turn_id, str):
+        if not isinstance(session_id, str):
+            return None
+        if source == "claude" and (not isinstance(turn_id, str) or not turn_id):
+            transcript_path = hook_input.get("transcript_path")
+            last_message = hook_input.get("last_assistant_message")
+            legacy_material = (
+                (transcript_path if isinstance(transcript_path, str) else "")
+                + (last_message if isinstance(last_message, str) else "")
+            )
+            turn_id = hashlib.sha256(legacy_material.encode("utf-8")).hexdigest()[:12]
+        elif not isinstance(turn_id, str):
             return None
         payload = {
             "id": f"{agent_source}:{session_id}:{turn_id}",
