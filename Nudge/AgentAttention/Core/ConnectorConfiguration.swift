@@ -13,6 +13,140 @@ public enum ConnectorConfigurationError: Error, Equatable, LocalizedError {
 
 private let nudgeHookMarker = "# com.nudge.max.agent-hook"
 private let claudePluginDescription = "Routes Claude Code attention events to Nudge."
+private let claudePluginID = "nudge-agent-attention@nudge-local"
+private let claudeMarketplaceID = "nudge-local"
+
+public enum ClaudeMarketplaceRegistration: Equatable, Sendable {
+    case absent
+    case owned
+    case conflict(actualPath: String?)
+}
+
+public struct ClaudeConnectPlan: Equatable, Sendable {
+    public let addMarketplace: Bool
+    public let installPlugin: Bool
+
+    public init(addMarketplace: Bool, installPlugin: Bool) {
+        self.addMarketplace = addMarketplace
+        self.installPlugin = installPlugin
+    }
+}
+
+public struct ClaudeDisconnectPlan: Equatable, Sendable {
+    public let uninstallPlugin: Bool
+    public let removeMarketplace: Bool
+
+    public init(uninstallPlugin: Bool, removeMarketplace: Bool) {
+        self.uninstallPlugin = uninstallPlugin
+        self.removeMarketplace = removeMarketplace
+    }
+}
+
+public enum ClaudeCleanupAction: String, Equatable, Sendable {
+    case uninstallPlugin
+    case removeMarketplace
+}
+
+public struct ClaudeCleanupFailure: Equatable, Sendable {
+    public let action: ClaudeCleanupAction
+    public let message: String
+
+    public init(action: ClaudeCleanupAction, message: String) {
+        self.action = action
+        self.message = message
+    }
+}
+
+public struct ClaudeConnectorRegistryState: Equatable, Sendable {
+    public let pluginInstalledForUser: Bool
+    public let marketplace: ClaudeMarketplaceRegistration
+
+    public init(
+        pluginInstalledForUser: Bool,
+        marketplace: ClaudeMarketplaceRegistration
+    ) {
+        self.pluginInstalledForUser = pluginInstalledForUser
+        self.marketplace = marketplace
+    }
+
+    public var connectPlan: ClaudeConnectPlan? {
+        if case .conflict = marketplace { return nil }
+        return ClaudeConnectPlan(
+            addMarketplace: marketplace == .absent,
+            installPlugin: !pluginInstalledForUser
+        )
+    }
+
+    public var disconnectPlan: ClaudeDisconnectPlan? {
+        if case .conflict = marketplace { return nil }
+        return ClaudeDisconnectPlan(
+            uninstallPlugin: pluginInstalledForUser,
+            removeMarketplace: marketplace == .owned
+        )
+    }
+}
+
+public func executeClaudeDisconnectPlan(
+    _ plan: ClaudeDisconnectPlan,
+    uninstallPlugin: () throws -> Void,
+    removeMarketplace: () throws -> Void
+) -> [ClaudeCleanupFailure] {
+    var failures: [ClaudeCleanupFailure] = []
+    if plan.uninstallPlugin {
+        do {
+            try uninstallPlugin()
+        } catch {
+            failures.append(.init(
+                action: .uninstallPlugin,
+                message: clearConnectorErrorMessage(error)
+            ))
+        }
+    }
+    if plan.removeMarketplace {
+        do {
+            try removeMarketplace()
+        } catch {
+            failures.append(.init(
+                action: .removeMarketplace,
+                message: clearConnectorErrorMessage(error)
+            ))
+        }
+    }
+    return failures
+}
+
+public func nudgeClaudePluginIsInstalledForUser(in object: Any) -> Bool {
+    guard let root = object as? [String: Any],
+          let plugins = root["plugins"] as? [String: Any],
+          let installations = plugins[claudePluginID] as? [[String: Any]]
+    else { return false }
+
+    return installations.contains { installation in
+        guard installation["scope"] as? String == "user",
+              let installPath = installation["installPath"] as? String
+        else { return false }
+        return !installPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+public func nudgeClaudeMarketplaceRegistration(
+    in object: Any,
+    expectedInstallPath: String
+) -> ClaudeMarketplaceRegistration {
+    guard let root = object as? [String: Any],
+          let registration = root[claudeMarketplaceID]
+    else { return .absent }
+    guard let registration = registration as? [String: Any],
+          let actualPath = registration["installLocation"] as? String,
+          !actualPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return .conflict(actualPath: nil) }
+
+    let standardizedActual = URL(fileURLWithPath: actualPath).standardizedFileURL.path
+    let standardizedExpected = URL(fileURLWithPath: expectedInstallPath).standardizedFileURL.path
+    return standardizedActual == standardizedExpected
+        ? .owned
+        : .conflict(actualPath: actualPath)
+}
 
 public func codexHooksConfiguration(from data: Data?) throws -> Any {
     guard let data, !data.isEmpty,
@@ -84,6 +218,7 @@ public func removingNudgeCodexHooks(from object: Any) -> Any {
                 guard let command = hook["command"] as? String else { return true }
                 return !command.hasSuffix(nudgeHookMarker)
             }
+            guard retainedHooks.count != hooks.count else { return group }
             guard !retainedHooks.isEmpty else { return nil }
 
             var retainedGroup = group
@@ -176,4 +311,12 @@ private func shellQuoted(_ value: String) -> String {
 private func encodedJSON(_ object: Any) -> Data {
     // All objects above are made exclusively from JSON-compatible literals.
     try! JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+}
+
+private func clearConnectorErrorMessage(_ error: Error) -> String {
+    if let localized = error as? LocalizedError,
+       let description = localized.errorDescription {
+        return description
+    }
+    return error.localizedDescription
 }

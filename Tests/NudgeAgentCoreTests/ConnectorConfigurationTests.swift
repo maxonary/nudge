@@ -81,6 +81,32 @@ struct ConnectorConfigurationTests {
     }
 
     @Test
+    func connectAndDisconnectPreserveForeignEmptyHookGroupsAndMetadata() throws {
+        let existing = try jsonObject(
+            """
+            {
+              "hooks": {
+                "Stop": [{
+                  "matcher": "foreign-empty",
+                  "description": "Keep this group exactly as configured.",
+                  "futureMetadata": {"enabled": true},
+                  "hooks": []
+                }]
+              }
+            }
+            """
+        )
+
+        let connected = addingNudgeCodexHooks(to: existing, helperPath: "/stable/nudge-hook")
+        let connectedText = try jsonString(connected)
+        let disconnected = removingNudgeCodexHooks(from: connected)
+
+        #expect(connectedText.contains("foreign-empty"))
+        #expect(connectedText.contains("futureMetadata"))
+        #expect(try canonicalJSONData(disconnected) == canonicalJSONData(existing))
+    }
+
+    @Test
     func missingAndEmptyCodexConfigurationCreateAnEmptyHooksRoot() throws {
         let missing = try codexHooksConfiguration(from: nil)
         let empty = try codexHooksConfiguration(from: Data())
@@ -115,6 +141,155 @@ struct ConnectorConfigurationTests {
         #expect(ownedHookCommands(in: added) == [
             "'/Users/Max O'\\''Brien/Nudge hook' codex # com.nudge.max.agent-hook",
             "'/Users/Max O'\\''Brien/Nudge hook' codex # com.nudge.max.agent-hook"
+        ])
+    }
+
+    @Test
+    func claudeInstalledPluginParserRequiresExactUserEntryWithInstallPath() throws {
+        let falsePositives = try jsonObject(
+            """
+            {
+              "version": 2,
+              "metadata": {
+                "nudge-agent-attention@nudge-local": [
+                  {"scope": "user", "installPath": "/metadata-only"}
+                ]
+              },
+              "plugins": {
+                "nudge-agent-attention@nudge-local": [
+                  {"scope": "project", "installPath": "/project-copy"},
+                  {"scope": "user", "installPath": ""}
+                ]
+              }
+            }
+            """
+        )
+        let installedForUser = try jsonObject(
+            """
+            {
+              "version": 2,
+              "plugins": {
+                "nudge-agent-attention@nudge-local": [
+                  {"scope": "project", "installPath": "/project-copy"},
+                  {"scope": "user", "installPath": "/user-copy"}
+                ]
+              }
+            }
+            """
+        )
+
+        #expect(!nudgeClaudePluginIsInstalledForUser(in: falsePositives))
+        #expect(nudgeClaudePluginIsInstalledForUser(in: installedForUser))
+    }
+
+    @Test
+    func claudeMarketplaceParserUsesOnlyExactTopLevelOwnedPath() throws {
+        let expectedPath = "/stable/ClaudeMarketplace"
+        let metadataFalsePositive = try jsonObject(
+            """
+            {
+              "version": 2,
+              "metadata": {
+                "nudge-local": {"installLocation": "/stable/ClaudeMarketplace"}
+              }
+            }
+            """
+        )
+        let foreignSameName = try jsonObject(
+            """
+            {
+              "version": 2,
+              "nudge-local": {
+                "source": {"source": "directory", "path": "/someone-else"},
+                "installLocation": "/someone-else",
+                "lastUpdated": "2026-09-03T10:00:00Z"
+              }
+            }
+            """
+        )
+        let owned = try jsonObject(
+            """
+            {
+              "version": 2,
+              "nudge-local": {
+                "source": {"source": "directory", "path": "/stable/ClaudeMarketplace"},
+                "installLocation": "/stable/ClaudeMarketplace",
+                "lastUpdated": "2026-09-03T10:00:00Z"
+              }
+            }
+            """
+        )
+
+        #expect(nudgeClaudeMarketplaceRegistration(
+            in: metadataFalsePositive,
+            expectedInstallPath: expectedPath
+        ) == .absent)
+        #expect(nudgeClaudeMarketplaceRegistration(
+            in: foreignSameName,
+            expectedInstallPath: expectedPath
+        ) == .conflict(actualPath: "/someone-else"))
+        #expect(nudgeClaudeMarketplaceRegistration(
+            in: owned,
+            expectedInstallPath: expectedPath
+        ) == .owned)
+    }
+
+    @Test
+    func claudePlansAreIdempotentAndCoverPartialCleanup() {
+        let absent = ClaudeConnectorRegistryState(
+            pluginInstalledForUser: false,
+            marketplace: .absent
+        )
+        let fullyInstalled = ClaudeConnectorRegistryState(
+            pluginInstalledForUser: true,
+            marketplace: .owned
+        )
+        let pluginOnly = ClaudeConnectorRegistryState(
+            pluginInstalledForUser: true,
+            marketplace: .absent
+        )
+        let marketplaceOnly = ClaudeConnectorRegistryState(
+            pluginInstalledForUser: false,
+            marketplace: .owned
+        )
+        let conflict = ClaudeConnectorRegistryState(
+            pluginInstalledForUser: true,
+            marketplace: .conflict(actualPath: "/someone-else")
+        )
+
+        #expect(absent.connectPlan == .init(addMarketplace: true, installPlugin: true))
+        #expect(absent.disconnectPlan == .init(uninstallPlugin: false, removeMarketplace: false))
+        #expect(fullyInstalled.connectPlan == .init(addMarketplace: false, installPlugin: false))
+        #expect(fullyInstalled.disconnectPlan == .init(uninstallPlugin: true, removeMarketplace: true))
+        #expect(pluginOnly.connectPlan == .init(addMarketplace: true, installPlugin: false))
+        #expect(pluginOnly.disconnectPlan == .init(uninstallPlugin: true, removeMarketplace: false))
+        #expect(marketplaceOnly.connectPlan == .init(addMarketplace: false, installPlugin: true))
+        #expect(marketplaceOnly.disconnectPlan == .init(uninstallPlugin: false, removeMarketplace: true))
+        #expect(conflict.connectPlan == nil)
+        #expect(conflict.disconnectPlan == nil)
+    }
+
+    @Test
+    func claudeDisconnectAttemptsBothOwnedCleanupActionsWhenEachFails() {
+        let plan = ClaudeDisconnectPlan(uninstallPlugin: true, removeMarketplace: true)
+        var attempts: [ClaudeCleanupAction] = []
+
+        let failures = executeClaudeDisconnectPlan(
+            plan,
+            uninstallPlugin: {
+                attempts.append(.uninstallPlugin)
+                throw CleanupFixtureError(message: "uninstall failed")
+            },
+            removeMarketplace: {
+                attempts.append(.removeMarketplace)
+                throw CleanupFixtureError(message: "remove failed")
+            }
+        )
+
+        #expect(attempts == [.uninstallPlugin, .removeMarketplace])
+        #expect(failures == [
+            .init(action: .uninstallPlugin, message: "uninstall failed"),
+            .init(action: .removeMarketplace, message: "remove failed")
         ])
     }
 
@@ -227,4 +402,10 @@ private func ownedHookCommands(in object: Any) -> [String] {
             }
         }
     }
+}
+
+private struct CleanupFixtureError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? { message }
 }
