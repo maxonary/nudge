@@ -73,7 +73,7 @@ struct AgentAttentionStateTests {
         let approval = AgentApproval.fixture(id: "approval")
         let events = [
             AgentEventEnvelope(
-                version: 1,
+                protocolVersion: 1,
                 source: .claudeCode,
                 cwd: "/work/nudge",
                 project: "nudge",
@@ -87,7 +87,7 @@ struct AgentAttentionStateTests {
                 ))
             ),
             AgentEventEnvelope(
-                version: 1,
+                protocolVersion: 1,
                 source: .codex,
                 cwd: "/work/nudge",
                 project: "nudge",
@@ -95,7 +95,7 @@ struct AgentAttentionStateTests {
                 event: .question(question)
             ),
             AgentEventEnvelope(
-                version: 1,
+                protocolVersion: 1,
                 source: .claudeCode,
                 cwd: "/work/nudge",
                 project: "nudge",
@@ -113,6 +113,67 @@ struct AgentAttentionStateTests {
 
         #expect(events.map(\.kind) == [.completion, .question, .approval])
     }
+
+    @Test
+    func completionWireFormatUsesExplicitVersionedPayload() throws {
+        let envelope = completionEnvelope()
+        let data = try JSONEncoder().encode(envelope)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let event = object?["event"] as? [String: Any]
+        let payload = event?["payload"] as? [String: Any]
+
+        #expect(object?["protocolVersion"] as? Int == 1)
+        #expect(object?["version"] == nil)
+        #expect(event?["type"] as? String == "completion")
+        #expect(payload?["id"] as? String == "completion")
+        #expect(payload?["_0"] == nil)
+
+        let fixture = Data(
+            """
+            {
+              "protocolVersion": 1,
+              "source": "claudeCode",
+              "cwd": "/work/nudge",
+              "project": "nudge",
+              "host": {
+                "appName": "Terminal",
+                "bundleID": "com.apple.Terminal",
+                "terminalSessionID": "tty-42"
+              },
+              "event": {
+                "type": "completion",
+                "payload": {
+                  "id": "completion",
+                  "source": "claudeCode",
+                  "context": "Finished the requested change.",
+                  "title": "Ready for review",
+                  "message": "Tests pass."
+                }
+              }
+            }
+            """.utf8
+        )
+        let decoded = try JSONDecoder().decode(AgentEventEnvelope.self, from: fixture)
+
+        #expect(decoded == envelope)
+    }
+}
+
+private func completionEnvelope() -> AgentEventEnvelope {
+    AgentEventEnvelope(
+        protocolVersion: 1,
+        source: .claudeCode,
+        cwd: "/work/nudge",
+        project: "nudge",
+        host: .init(appName: "Terminal", bundleID: "com.apple.Terminal", terminalSessionID: "tty-42"),
+        event: .completion(.init(
+            id: "completion",
+            source: .claudeCode,
+            context: "Finished the requested change.",
+            title: "Ready for review",
+            message: "Tests pass."
+        ))
+    )
 }
 
 private extension AgentQuestionSet {

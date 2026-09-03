@@ -28,6 +28,11 @@ public enum AgentEvent: Codable, Equatable, Sendable {
     case question(AgentQuestionSet)
     case approval(AgentApproval)
 
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case payload
+    }
+
     public var kind: AgentEventKind {
         switch self {
         case .completion:
@@ -38,10 +43,46 @@ public enum AgentEvent: Codable, Equatable, Sendable {
             .approval
         }
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawType = try container.decode(String.self, forKey: .type)
+
+        guard let type = AgentEventKind(rawValue: rawType) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unknown agent event type: \(rawType)"
+            )
+        }
+
+        switch type {
+        case .completion:
+            self = .completion(try container.decode(AgentCompletion.self, forKey: .payload))
+        case .question:
+            self = .question(try container.decode(AgentQuestionSet.self, forKey: .payload))
+        case .approval:
+            self = .approval(try container.decode(AgentApproval.self, forKey: .payload))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind.rawValue, forKey: .type)
+
+        switch self {
+        case let .completion(completion):
+            try container.encode(completion, forKey: .payload)
+        case let .question(questionSet):
+            try container.encode(questionSet, forKey: .payload)
+        case let .approval(approval):
+            try container.encode(approval, forKey: .payload)
+        }
+    }
 }
 
 public struct AgentEventEnvelope: Codable, Equatable, Sendable {
-    public var version: Int
+    public var protocolVersion: Int
     public var source: AgentSource
     public var cwd: String
     public var project: String?
@@ -53,14 +94,14 @@ public struct AgentEventEnvelope: Codable, Equatable, Sendable {
     }
 
     public init(
-        version: Int,
+        protocolVersion: Int,
         source: AgentSource,
         cwd: String,
         project: String? = nil,
         host: AgentHost,
         event: AgentEvent
     ) {
-        self.version = version
+        self.protocolVersion = protocolVersion
         self.source = source
         self.cwd = cwd
         self.project = project
