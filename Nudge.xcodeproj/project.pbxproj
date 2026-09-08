@@ -47,6 +47,7 @@
 		AA1000000000000000000007 /* AgentAttentionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000007 /* AgentAttentionView.swift */; };
 		AA1000000000000000000008 /* AgentPanelFocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000008 /* AgentPanelFocusController.swift */; };
 		AA1000000000000000000009 /* nudge_agent_hook.py in Resources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000009 /* nudge_agent_hook.py */; };
+		AA1000000000000000000010 /* ConnectorLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000010 /* ConnectorLifecycle.swift */; };
 		AAA000000000000000000020 /* NudgeConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000010 /* NudgeConstants.swift */; };
 		AAA000000000000000000021 /* NudgeIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000011 /* NudgeIdentity.swift */; };
 		AAA000000000000000000022 /* NudgeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000012 /* NudgeTransport.swift */; };
@@ -127,6 +128,7 @@
 		AA2000000000000000000007 /* AgentAttentionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttentionView.swift; sourceTree = "<group>"; };
 		AA2000000000000000000008 /* AgentPanelFocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanelFocusController.swift; sourceTree = "<group>"; };
 		AA2000000000000000000009 /* nudge_agent_hook.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = nudge_agent_hook.py; sourceTree = "<group>"; };
+		AA2000000000000000000010 /* ConnectorLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectorLifecycle.swift; sourceTree = "<group>"; };
 		AAA000000000000000000010 /* NudgeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeConstants.swift; sourceTree = "<group>"; };
 		AAA000000000000000000011 /* NudgeIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeIdentity.swift; sourceTree = "<group>"; };
 		AAA000000000000000000012 /* NudgeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeTransport.swift; sourceTree = "<group>"; };
@@ -434,6 +436,7 @@
 				AA2000000000000000000001 /* AgentAttentionModels.swift */,
 				AA2000000000000000000002 /* AgentAttentionState.swift */,
 				AA2000000000000000000003 /* ConnectorConfiguration.swift */,
+				AA2000000000000000000010 /* ConnectorLifecycle.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -633,6 +636,7 @@
 				AA1000000000000000000001 /* AgentAttentionModels.swift in Sources */,
 				AA1000000000000000000002 /* AgentAttentionState.swift in Sources */,
 				AA1000000000000000000003 /* ConnectorConfiguration.swift in Sources */,
+				AA1000000000000000000010 /* ConnectorLifecycle.swift in Sources */,
 				AA1000000000000000000004 /* AgentBridgeServer.swift in Sources */,
 				AA1000000000000000000005 /* AgentConnectorManager.swift in Sources */,
 				AA1000000000000000000006 /* AgentAttentionCenter.swift in Sources */,

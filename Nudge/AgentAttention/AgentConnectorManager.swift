@@ -9,6 +9,12 @@ enum AgentConnectorStatus: Equatable, Sendable {
     case failed(String)
 }
 
+private struct ClaudeRegistrySnapshot {
+    let state: ClaudeConnectorRegistryState
+    let installPath: String?
+    let enablement: ClaudePluginEnablement
+}
+
 @MainActor
 final class AgentConnectorManager: ObservableObject {
     static let shared = AgentConnectorManager()
@@ -19,6 +25,7 @@ final class AgentConnectorManager: ObservableObject {
 
     private let homeDirectory: URL
     private let bundle: Bundle
+    private let retryStore: AgentConnectorRetryStore
 
     private var bridgeDirectory: URL {
         homeDirectory
@@ -45,12 +52,18 @@ final class AgentConnectorManager: ObservableObject {
         homeDirectory.appendingPathComponent(".claude/plugins/known_marketplaces.json")
     }
 
+    private var claudeSettingsURL: URL {
+        homeDirectory.appendingPathComponent(".claude/settings.json")
+    }
+
     private init(
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
-        bundle: Bundle = .main
+        bundle: Bundle = .main,
+        userDefaults: UserDefaults = .standard
     ) {
         self.homeDirectory = homeDirectory
         self.bundle = bundle
+        self.retryStore = AgentConnectorRetryStore(defaults: userDefaults)
         refresh()
     }
 
@@ -63,30 +76,74 @@ final class AgentConnectorManager: ObservableObject {
         }
     }
 
+    func mutation(for source: AgentSource) -> AgentConnectorMutation {
+        switch status(for: source) {
+        case .connected, .needsTrust:
+            return .disconnect
+        case .notInstalled:
+            return .connect
+        case .installing, .failed:
+            return retryStore.pendingMutation(for: source) ?? .connect
+        }
+    }
+
+    func requiresManualConnectorRepair(for source: AgentSource) -> Bool {
+        guard source == .claudeCode,
+              case .failed = status(for: source)
+        else { return false }
+
+        guard (try? bundledHelperData()) != nil else { return true }
+        guard let registry = try? claudeRegistrySnapshot() else { return true }
+        if case .conflict = registry.state.marketplace { return true }
+        return registry.state.pluginInstalledForUser
+            && registry.state.marketplace == .owned
+            && cachedClaudePluginRootURL(for: registry) == nil
+    }
+
     func refresh() {
-        claudeCodeStatus = refreshedClaudeStatus()
-        codexStatus = refreshedCodexStatus()
+        setRefreshedStatus(refreshedClaudeStatus(), for: .claudeCode)
+        setRefreshedStatus(refreshedCodexStatus(), for: .codex)
     }
 
     func connect(_ source: AgentSource) async {
         guard status(for: source) != .installing else { return }
+        retryStore.begin(.connect, for: source)
         setStatus(.installing, for: source)
 
         do {
             let helperData = try bundledHelperData()
             switch source {
             case .claudeCode:
-                let registryState = try claudeRegistryState()
-                guard let plan = registryState.connectPlan else {
-                    throw marketplaceConflictError(for: registryState.marketplace)
+                let registry = try claudeRegistrySnapshot()
+                guard let plan = registry.state.connectPlan else {
+                    throw marketplaceConflictError(for: registry.state.marketplace)
                 }
-                let needsCommand = plan.addMarketplace || plan.installPlugin
+                let shouldEnablePlugin = registry.enablement == .disabled
+                let needsCommand = plan.addMarketplace || plan.installPlugin || shouldEnablePlugin
                 let executable = needsCommand ? try discoverClaudeExecutable() : nil
                 let marketplaceURL = claudeMarketplaceURL
                 let helperURL = stableHelperURL
+                let installedPluginFiles = nudgeClaudeInstalledPluginFiles(
+                    helperData: helperData
+                )
+                let cachedPluginRootURL = cachedClaudePluginRootURL(for: registry)
+                let repairCachedPlugin = cachedPluginRootURL.map {
+                    !agentFilesAreCurrent(
+                        beneath: $0,
+                        expectedFiles: installedPluginFiles,
+                        executablePaths: ["bin/nudge_agent_hook.py"]
+                    )
+                } ?? false
                 try await Task.detached(priority: .userInitiated) {
                     try installStableHelper(helperData, at: helperURL)
                     try writeClaudePluginFiles(helperData: helperData, beneath: marketplaceURL)
+                    if repairCachedPlugin, let cachedPluginRootURL {
+                        try writeAgentFiles(
+                            installedPluginFiles,
+                            beneath: cachedPluginRootURL,
+                            executablePaths: ["bin/nudge_agent_hook.py"]
+                        )
+                    }
                     if plan.addMarketplace {
                         try runProcess(
                             executableURL: try requiredClaudeExecutable(executable),
@@ -101,12 +158,21 @@ final class AgentConnectorManager: ObservableObject {
                             executableURL: try requiredClaudeExecutable(executable),
                             arguments: [
                                 "plugin", "install", "nudge-agent-attention@nudge-local",
-                                "--scope", "user", "--yes"
+                                "--scope", "user"
+                            ]
+                        )
+                    }
+                    if shouldEnablePlugin {
+                        try runProcess(
+                            executableURL: try requiredClaudeExecutable(executable),
+                            arguments: [
+                                "plugin", "enable", "nudge-agent-attention@nudge-local",
+                                "--scope", "user"
                             ]
                         )
                     }
                 }.value
-                claudeCodeStatus = .connected
+                setRefreshedStatus(refreshedClaudeStatus(), for: .claudeCode)
 
             case .codex:
                 let helperURL = stableHelperURL
@@ -115,7 +181,7 @@ final class AgentConnectorManager: ObservableObject {
                     try installStableHelper(helperData, at: helperURL)
                     try connectCodexHooks(at: hooksURL, helperPath: helperURL.path)
                 }.value
-                codexStatus = .needsTrust
+                setRefreshedStatus(refreshedCodexStatus(), for: .codex)
             }
         } catch {
             setStatus(.failed(clearMessage(for: error)), for: source)
@@ -124,16 +190,18 @@ final class AgentConnectorManager: ObservableObject {
 
     func disconnect(_ source: AgentSource) async {
         guard status(for: source) != .installing else { return }
+        retryStore.begin(.disconnect, for: source)
         setStatus(.installing, for: source)
 
         do {
             switch source {
             case .claudeCode:
-                let registryState = try claudeRegistryState()
+                let registryState = try claudeRegistrySnapshot().state
                 let plan = registryState.disconnectPlan
                 guard plan.uninstallPlugin || plan.removeMarketplace else {
-                    claudeCodeStatus = disconnectedClaudeStatus(
-                        marketplace: registryState.marketplace
+                    setRefreshedStatus(
+                        disconnectedClaudeStatus(marketplace: registryState.marketplace),
+                        for: .claudeCode
                     )
                     return
                 }
@@ -164,8 +232,9 @@ final class AgentConnectorManager: ObservableObject {
                 if !failures.isEmpty {
                     throw ConnectorRuntimeError.cleanupFailed(failures)
                 }
-                claudeCodeStatus = disconnectedClaudeStatus(
-                    marketplace: registryState.marketplace
+                setRefreshedStatus(
+                    disconnectedClaudeStatus(marketplace: registryState.marketplace),
+                    for: .claudeCode
                 )
 
             case .codex:
@@ -173,7 +242,7 @@ final class AgentConnectorManager: ObservableObject {
                 try await Task.detached(priority: .userInitiated) {
                     try disconnectCodexHooks(at: hooksURL)
                 }.value
-                codexStatus = .notInstalled
+                setRefreshedStatus(.notInstalled, for: .codex)
             }
         } catch {
             setStatus(.failed(clearMessage(for: error)), for: source)
@@ -189,6 +258,16 @@ final class AgentConnectorManager: ObservableObject {
         }
     }
 
+    private func setRefreshedStatus(_ status: AgentConnectorStatus, for source: AgentSource) {
+        setStatus(status, for: source)
+        switch status {
+        case .notInstalled, .needsTrust, .connected:
+            retryStore.clear(for: source)
+        case .installing, .failed:
+            break
+        }
+    }
+
     private func refreshedCodexStatus() -> AgentConnectorStatus {
         do {
             guard FileManager.default.fileExists(atPath: codexHooksURL.path) else {
@@ -197,7 +276,18 @@ final class AgentConnectorManager: ObservableObject {
             let data = try Data(contentsOf: codexHooksURL)
             guard !data.isEmpty else { return .notInstalled }
             let object = try codexHooksConfiguration(from: data)
-            return containsNudgeCodexHook(in: object) ? .needsTrust : .notInstalled
+            guard containsNudgeCodexHook(in: object) else { return .notInstalled }
+
+            let helperData = try bundledHelperData()
+            guard agentHelperIntegrity(
+                at: stableHelperURL,
+                expectedData: helperData
+            ) == .current else {
+                return .failed(
+                    "Der Codex Hook ist unvollständig oder veraltet. Erneut verbinden repariert ihn."
+                )
+            }
+            return .needsTrust
         } catch {
             return .failed(clearMessage(for: error))
         }
@@ -205,15 +295,50 @@ final class AgentConnectorManager: ObservableObject {
 
     private func refreshedClaudeStatus() -> AgentConnectorStatus {
         do {
-            let registryState = try claudeRegistryState()
-            switch (registryState.pluginInstalledForUser, registryState.marketplace) {
+            let registry = try claudeRegistrySnapshot()
+            switch (registry.state.pluginInstalledForUser, registry.state.marketplace) {
             case (true, .owned):
+                guard registry.enablement != .disabled else {
+                    return .failed(
+                        "Das Nudge Plugin ist in Claude Code deaktiviert. Erneut verbinden aktiviert es."
+                    )
+                }
+                let helperData = try bundledHelperData()
+                let sourcePluginFiles = claudePluginFiles(helperData: helperData)
+                let installedPluginFiles = nudgeClaudeInstalledPluginFiles(
+                    helperData: helperData
+                )
+                guard agentFilesAreCurrent(
+                    beneath: claudeMarketplaceURL,
+                    expectedFiles: sourcePluginFiles,
+                    executablePaths: [
+                        "nudge-agent-attention/bin/nudge_agent_hook.py"
+                    ]
+                ) else {
+                    return .failed(
+                        "Das Claude Plugin ist unvollständig oder veraltet. Erneut verbinden repariert es."
+                    )
+                }
+                guard let cachedPluginRootURL = cachedClaudePluginRootURL(for: registry) else {
+                    return .failed(
+                        "Claudes Nudge-Installationspfad ist nicht vertrauenswürdig. Nudge hat ihn nicht verändert; bitte das Plugin in Claude Code manuell prüfen."
+                    )
+                }
+                guard agentFilesAreCurrent(
+                    beneath: cachedPluginRootURL,
+                    expectedFiles: installedPluginFiles,
+                    executablePaths: ["bin/nudge_agent_hook.py"]
+                ) else {
+                    return .failed(
+                        "Das Claude Plugin ist unvollständig oder veraltet. Erneut verbinden repariert es."
+                    )
+                }
                 return .connected
             case (false, .absent):
                 return .notInstalled
             case (_, .conflict):
                 return .failed(clearMessage(for: marketplaceConflictError(
-                    for: registryState.marketplace
+                    for: registry.state.marketplace
                 )))
             default:
                 return .failed(
@@ -225,7 +350,7 @@ final class AgentConnectorManager: ObservableObject {
         }
     }
 
-    private func claudeRegistryState() throws -> ClaudeConnectorRegistryState {
+    private func claudeRegistrySnapshot() throws -> ClaudeRegistrySnapshot {
         let installedPlugins = try readClaudeRegistry(
             at: claudePluginRegistryURL,
             name: "installed_plugins.json"
@@ -234,13 +359,32 @@ final class AgentConnectorManager: ObservableObject {
             at: claudeMarketplaceRegistryURL,
             name: "known_marketplaces.json"
         )
-        return ClaudeConnectorRegistryState(
-            pluginInstalledForUser: nudgeClaudePluginIsInstalledForUser(in: installedPlugins),
-            marketplace: nudgeClaudeMarketplaceRegistration(
-                in: knownMarketplaces,
-                expectedInstallPath: claudeMarketplaceURL.path
-            )
+        let settings = try readClaudeRegistry(at: claudeSettingsURL, name: "settings.json")
+        return ClaudeRegistrySnapshot(
+            state: ClaudeConnectorRegistryState(
+                pluginInstalledForUser: nudgeClaudePluginIsInstalledForUser(
+                    in: installedPlugins
+                ),
+                marketplace: nudgeClaudeMarketplaceRegistration(
+                    in: knownMarketplaces,
+                    expectedInstallPath: claudeMarketplaceURL.path
+                )
+            ),
+            installPath: nudgeClaudeUserPluginInstallPath(in: installedPlugins),
+            enablement: nudgeClaudePluginEnablement(in: settings)
         )
+    }
+
+    private func cachedClaudePluginRootURL(for registry: ClaudeRegistrySnapshot) -> URL? {
+        guard registry.state.marketplace == .owned else { return nil }
+        guard let installPath = registry.installPath else { return nil }
+        guard let helperURL = nudgeClaudeCachedHelperURL(
+            installPath: installPath,
+            homeDirectory: homeDirectory
+        ) else { return nil }
+        return helperURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 
     private func readClaudeRegistry(at url: URL, name: String) throws -> Any {
@@ -319,6 +463,7 @@ private enum ConnectorRuntimeError: LocalizedError {
     case claudeExecutableMissing
     case invalidClaudeRegistry(String)
     case marketplaceConflict(actualPath: String?)
+    case unsafeManagedPath(String)
     case commandFailed(name: String, status: Int32, output: String)
     case cleanupFailed([ClaudeCleanupFailure])
 
@@ -336,6 +481,8 @@ private enum ConnectorRuntimeError: LocalizedError {
             } else {
                 return "Claude Marketplace nudge-local hat keinen gültigen Installationspfad. Nudge hat nichts verändert."
             }
+        case let .unsafeManagedPath(path):
+            return "Nudge hat den unsicheren Plugin-Pfad \(path) nicht verändert."
         case let .commandFailed(name, status, output):
             if output.isEmpty {
                 return "Claude-Befehl \(name) ist mit Status \(status) fehlgeschlagen."
@@ -369,14 +516,28 @@ private func installStableHelper(_ data: Data, at helperURL: URL) throws {
 }
 
 private func writeClaudePluginFiles(helperData: Data, beneath rootURL: URL) throws {
-    for (relativePath, data) in claudePluginFiles(helperData: helperData).sorted(by: { $0.key < $1.key }) {
-        let destination = rootURL.appendingPathComponent(relativePath)
+    try writeAgentFiles(
+        claudePluginFiles(helperData: helperData),
+        beneath: rootURL,
+        executablePaths: ["nudge-agent-attention/bin/nudge_agent_hook.py"]
+    )
+}
+
+private func writeAgentFiles(
+    _ files: [String: Data],
+    beneath rootURL: URL,
+    executablePaths: Set<String>
+) throws {
+    for (relativePath, data) in files.sorted(by: { $0.key < $1.key }) {
+        guard let destination = agentManagedFileURL(relativePath, beneath: rootURL) else {
+            throw ConnectorRuntimeError.unsafeManagedPath(relativePath)
+        }
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         try atomicWrite(data, to: destination)
-        if relativePath.hasSuffix("/bin/nudge_agent_hook.py") {
+        if executablePaths.contains(relativePath) {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o755],
                 ofItemAtPath: destination.path

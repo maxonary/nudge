@@ -9,11 +9,6 @@ import ServiceManagement
 import SwiftUI
 import os
 
-private enum ConnectorMutation: Equatable {
-    case connect
-    case disconnect
-}
-
 /// Thin wrapper over the modern `SMAppService` login-item API (macOS 13+).
 enum LoginItem {
     private static let log = Logger(subsystem: "com.ontora.nudge", category: "loginitem")
@@ -64,8 +59,6 @@ struct NudgeSettingsPane: View {
     @State private var nameError: String?
     @State private var showingPasswordSheet: Bool = false
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
-    @State private var claudeRetryMutation: ConnectorMutation = .connect
-    @State private var codexRetryMutation: ConnectorMutation = .connect
 
     private var launchAtLoginBinding: Binding<Bool> {
         Binding(
@@ -285,26 +278,15 @@ struct NudgeSettingsPane: View {
         }
         .onAppear {
             connectorManager.refresh()
-            synchronizeRetryMutation(
-                with: connectorManager.claudeCodeStatus,
-                source: .claudeCode
-            )
-            synchronizeRetryMutation(
-                with: connectorManager.codexStatus,
-                source: .codex
-            )
-        }
-        .onChange(of: connectorManager.claudeCodeStatus) { _, status in
-            synchronizeRetryMutation(with: status, source: .claudeCode)
-        }
-        .onChange(of: connectorManager.codexStatus) { _, status in
-            synchronizeRetryMutation(with: status, source: .codex)
         }
     }
 
     private func agentConnectorRow(_ source: AgentSource) -> some View {
         let status = connectorManager.status(for: source)
-        let mutation = connectorMutation(for: source, status: status)
+        let mutation = connectorManager.mutation(for: source)
+        let requiresManualRepair = connectorManager.requiresManualConnectorRepair(
+            for: source
+        )
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
@@ -320,10 +302,16 @@ struct NudgeSettingsPane: View {
 
                 connectorStatusView(status)
 
-                Button(connectorActionTitle(for: status, mutation: mutation)) {
-                    performConnectorMutation(mutation, source: source)
+                if requiresManualRepair {
+                    Text("Manuell prüfen")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button(connectorActionTitle(for: status, mutation: mutation)) {
+                        performConnectorMutation(mutation, source: source)
+                    }
+                    .disabled(status == .installing)
                 }
-                .disabled(status == .installing)
 
                 Button("Demo anzeigen") {
                     _ = agentAttention.showDemo(source: source)
@@ -358,7 +346,7 @@ struct NudgeSettingsPane: View {
             Label("Installiert", systemImage: "checkmark.circle")
                 .foregroundStyle(.orange)
         case .connected:
-            Label("Verbunden", systemImage: "checkmark.circle.fill")
+            Label("Bereit", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
         case .failed:
             Label("Fehler", systemImage: "exclamationmark.triangle.fill")
@@ -374,23 +362,9 @@ struct NudgeSettingsPane: View {
         source == .claudeCode ? "sparkles" : "terminal"
     }
 
-    private func connectorMutation(
-        for source: AgentSource,
-        status: AgentConnectorStatus
-    ) -> ConnectorMutation {
-        switch status {
-        case .connected, .needsTrust:
-            return .disconnect
-        case .notInstalled:
-            return .connect
-        case .installing, .failed:
-            return retryMutation(for: source)
-        }
-    }
-
     private func connectorActionTitle(
         for status: AgentConnectorStatus,
-        mutation: ConnectorMutation
+        mutation: AgentConnectorMutation
     ) -> String {
         switch status {
         case .connected, .needsTrust:
@@ -401,16 +375,15 @@ struct NudgeSettingsPane: View {
             return "Bitte warten"
         case .failed:
             return mutation == .disconnect
-                ? "Trennen erneut versuchen"
+                ? "Trennung fortsetzen"
                 : "Erneut verbinden"
         }
     }
 
     private func performConnectorMutation(
-        _ mutation: ConnectorMutation,
+        _ mutation: AgentConnectorMutation,
         source: AgentSource
     ) {
-        setRetryMutation(mutation, for: source)
         Task {
             switch mutation {
             case .connect:
@@ -418,33 +391,6 @@ struct NudgeSettingsPane: View {
             case .disconnect:
                 await connectorManager.disconnect(source)
             }
-        }
-    }
-
-    private func synchronizeRetryMutation(
-        with status: AgentConnectorStatus,
-        source: AgentSource
-    ) {
-        switch status {
-        case .notInstalled:
-            setRetryMutation(.connect, for: source)
-        case .connected, .needsTrust:
-            setRetryMutation(.disconnect, for: source)
-        case .installing, .failed:
-            break
-        }
-    }
-
-    private func retryMutation(for source: AgentSource) -> ConnectorMutation {
-        source == .claudeCode ? claudeRetryMutation : codexRetryMutation
-    }
-
-    private func setRetryMutation(_ mutation: ConnectorMutation, for source: AgentSource) {
-        switch source {
-        case .claudeCode:
-            claudeRetryMutation = mutation
-        case .codex:
-            codexRetryMutation = mutation
         }
     }
 
@@ -458,7 +404,7 @@ struct NudgeSettingsPane: View {
 
         switch (source, status) {
         case (.claudeCode, .connected):
-            return "In bereits laufenden Sessions /reload-plugins ausführen oder Claude Code neu starten."
+            return "Auf Benutzerebene bereit. In laufenden Sessions /reload-plugins ausführen; Workspace-Regeln können Plugins separat deaktivieren."
         case (.claudeCode, .notInstalled):
             return "Installiert das lokale Nudge-Plugin für deinen Benutzer."
         case (.codex, .notInstalled):
