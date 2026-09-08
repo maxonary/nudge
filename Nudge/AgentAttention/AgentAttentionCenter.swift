@@ -21,8 +21,10 @@ final class AgentAttentionCenter: ObservableObject {
     private var lastCompletionID: String?
     private var activationObserver: NSObjectProtocol?
     private var lastHandledQuestionKey: HandledQuestionKey?
+    private let workspace: NSWorkspace
 
     init(workspace: NSWorkspace = .shared) {
+        self.workspace = workspace
         activationObserver = workspace.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -41,7 +43,7 @@ final class AgentAttentionCenter: ObservableObject {
     deinit {
         collapseTask?.cancel()
         if let activationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+            workspace.notificationCenter.removeObserver(activationObserver)
         }
     }
 
@@ -178,6 +180,29 @@ final class AgentAttentionCenter: ObservableObject {
 
     func jumpLabel(for host: AgentHost) -> String {
         "Zu \(host.appName)"
+    }
+
+    nonisolated static func hostMatches(
+        applicationBundleID: String?,
+        localizedName: String?,
+        host: AgentHost
+    ) -> Bool {
+        if let hostBundleID = host.bundleID {
+            return applicationBundleID == hostBundleID
+        }
+
+        return localizedNameMatches(localizedName, host: host)
+    }
+
+    nonisolated static func localizedNameMatches(
+        _ localizedName: String?,
+        host: AgentHost
+    ) -> Bool {
+        guard let localizedName else { return false }
+        let expectedName = host.appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let actualName = localizedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !expectedName.isEmpty, !actualName.isEmpty else { return false }
+        return expectedName.caseInsensitiveCompare(actualName) == .orderedSame
     }
 
     @discardableResult
@@ -322,9 +347,13 @@ final class AgentAttentionCenter: ObservableObject {
     }
 
     private func applicationDidActivate(_ application: NSRunningApplication) {
-        guard let bundleID = application.bundleIdentifier else { return }
-
-        if activeEnvelope?.host.bundleID == bundleID, let request = state.activeRequest {
+        if let host = activeEnvelope?.host,
+           Self.hostMatches(
+               applicationBundleID: application.bundleIdentifier,
+               localizedName: application.localizedName,
+               host: host
+           ),
+           let request = state.activeRequest {
             let session = activeSession
             rememberActiveQuestionAsHandled()
             activeSession = nil
@@ -334,7 +363,12 @@ final class AgentAttentionCenter: ObservableObject {
             session?.handoff()
         }
 
-        if completionEnvelope?.host.bundleID == bundleID,
+        if let host = completionEnvelope?.host,
+           Self.hostMatches(
+               applicationBundleID: application.bundleIdentifier,
+               localizedName: application.localizedName,
+               host: host
+           ),
            let completion = state.completion {
             completionEnvelope = nil
             cancelCollapse()
@@ -343,21 +377,26 @@ final class AgentAttentionCenter: ObservableObject {
     }
 
     private func isOriginFrontmost(_ host: AgentHost) -> Bool {
-        guard let bundleID = host.bundleID else { return false }
-        return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleID
+        guard let application = workspace.frontmostApplication else { return false }
+        return Self.hostMatches(
+            applicationBundleID: application.bundleIdentifier,
+            localizedName: application.localizedName,
+            host: host
+        )
     }
 
     private func activate(host: AgentHost) {
-        if let bundleID = host.bundleID,
-           let application = NSRunningApplication
-            .runningApplications(withBundleIdentifier: bundleID)
-            .first {
-            application.activate(options: [.activateAllWindows])
-            return
+        if let bundleID = host.bundleID {
+            if let application = NSRunningApplication
+                .runningApplications(withBundleIdentifier: bundleID)
+                .first {
+                application.activate(options: [.activateAllWindows])
+                return
+            }
         }
 
-        if let application = NSWorkspace.shared.runningApplications.first(where: {
-            $0.localizedName == host.appName
+        if let application = workspace.runningApplications.first(where: {
+            Self.localizedNameMatches($0.localizedName, host: host)
         }) {
             application.activate(options: [.activateAllWindows])
         }

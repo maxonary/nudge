@@ -37,7 +37,10 @@ struct AgentAttentionView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 header(eyebrow: sourceName, title: questionSet.header) {
-                    questionDots(questionSet)
+                    HStack(spacing: 8) {
+                        handoffButton()
+                        questionDots(questionSet)
+                    }
                 }
 
                 Text(question.prompt)
@@ -185,7 +188,9 @@ struct AgentAttentionView: View {
 
     private func approvalView(_ approval: AgentApproval) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            header(eyebrow: sourceName, title: "\(approval.toolName) möchte Zugriff")
+            header(eyebrow: sourceName, title: "\(approval.toolName) möchte Zugriff") {
+                handoffButton()
+            }
 
             Text(approval.detail)
                 .font(.system(size: 13, weight: .medium))
@@ -304,6 +309,32 @@ struct AgentAttentionView: View {
         .accessibilityLabel("\(completion.title). \(jumpLabel)")
     }
 
+    private func handoffButton() -> some View {
+        Button {
+            endTextEntry()
+            // Clear any stored focus restoration before requesting the origin app.
+            focusController.restorePreviousApplication()
+            center.jumpOrHandoff()
+        } label: {
+            HStack(spacing: 4) {
+                Text(jumpLabel)
+                    .lineLimit(1)
+                Image(systemName: "arrow.up.right")
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.82))
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.white.opacity(0.1))
+            )
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(jumpLabel). Anfrage im Agent fortsetzen")
+    }
+
     private func header<Trailing: View>(
         eyebrow: String,
         title: String,
@@ -314,6 +345,7 @@ struct AgentAttentionView: View {
                 .font(.system(size: 9, weight: .bold))
                 .tracking(0.8)
                 .foregroundStyle(.white.opacity(0.5))
+                .fixedSize(horizontal: true, vertical: false)
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.88))
