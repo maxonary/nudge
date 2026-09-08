@@ -77,6 +77,7 @@ struct DynamicNotchApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windows: [String: NSWindow] = [:] // UUID -> NSWindow
     var viewModels: [String: NudgeViewModel] = [:] // UUID -> NudgeViewModel

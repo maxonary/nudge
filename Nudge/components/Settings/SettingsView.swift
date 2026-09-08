@@ -9,6 +9,11 @@ import ServiceManagement
 import SwiftUI
 import os
 
+private enum ConnectorMutation: Equatable {
+    case connect
+    case disconnect
+}
+
 /// Thin wrapper over the modern `SMAppService` login-item API (macOS 13+).
 enum LoginItem {
     private static let log = Logger(subsystem: "com.ontora.nudge", category: "loginitem")
@@ -59,6 +64,8 @@ struct NudgeSettingsPane: View {
     @State private var nameError: String?
     @State private var showingPasswordSheet: Bool = false
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
+    @State private var claudeRetryMutation: ConnectorMutation = .connect
+    @State private var codexRetryMutation: ConnectorMutation = .connect
 
     private var launchAtLoginBinding: Binding<Bool> {
         Binding(
@@ -278,11 +285,26 @@ struct NudgeSettingsPane: View {
         }
         .onAppear {
             connectorManager.refresh()
+            synchronizeRetryMutation(
+                with: connectorManager.claudeCodeStatus,
+                source: .claudeCode
+            )
+            synchronizeRetryMutation(
+                with: connectorManager.codexStatus,
+                source: .codex
+            )
+        }
+        .onChange(of: connectorManager.claudeCodeStatus) { _, status in
+            synchronizeRetryMutation(with: status, source: .claudeCode)
+        }
+        .onChange(of: connectorManager.codexStatus) { _, status in
+            synchronizeRetryMutation(with: status, source: .codex)
         }
     }
 
     private func agentConnectorRow(_ source: AgentSource) -> some View {
         let status = connectorManager.status(for: source)
+        let mutation = connectorMutation(for: source, status: status)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
@@ -298,14 +320,8 @@ struct NudgeSettingsPane: View {
 
                 connectorStatusView(status)
 
-                Button(connectorActionTitle(for: status)) {
-                    Task {
-                        if status.isInstalled {
-                            await connectorManager.disconnect(source)
-                        } else {
-                            await connectorManager.connect(source)
-                        }
-                    }
+                Button(connectorActionTitle(for: status, mutation: mutation)) {
+                    performConnectorMutation(mutation, source: source)
                 }
                 .disabled(status == .installing)
 
@@ -358,7 +374,24 @@ struct NudgeSettingsPane: View {
         source == .claudeCode ? "sparkles" : "terminal"
     }
 
-    private func connectorActionTitle(for status: AgentConnectorStatus) -> String {
+    private func connectorMutation(
+        for source: AgentSource,
+        status: AgentConnectorStatus
+    ) -> ConnectorMutation {
+        switch status {
+        case .connected, .needsTrust:
+            return .disconnect
+        case .notInstalled:
+            return .connect
+        case .installing, .failed:
+            return retryMutation(for: source)
+        }
+    }
+
+    private func connectorActionTitle(
+        for status: AgentConnectorStatus,
+        mutation: ConnectorMutation
+    ) -> String {
         switch status {
         case .connected, .needsTrust:
             return "Trennen"
@@ -367,7 +400,51 @@ struct NudgeSettingsPane: View {
         case .installing:
             return "Bitte warten"
         case .failed:
-            return "Erneut verbinden"
+            return mutation == .disconnect
+                ? "Trennen erneut versuchen"
+                : "Erneut verbinden"
+        }
+    }
+
+    private func performConnectorMutation(
+        _ mutation: ConnectorMutation,
+        source: AgentSource
+    ) {
+        setRetryMutation(mutation, for: source)
+        Task {
+            switch mutation {
+            case .connect:
+                await connectorManager.connect(source)
+            case .disconnect:
+                await connectorManager.disconnect(source)
+            }
+        }
+    }
+
+    private func synchronizeRetryMutation(
+        with status: AgentConnectorStatus,
+        source: AgentSource
+    ) {
+        switch status {
+        case .notInstalled:
+            setRetryMutation(.connect, for: source)
+        case .connected, .needsTrust:
+            setRetryMutation(.disconnect, for: source)
+        case .installing, .failed:
+            break
+        }
+    }
+
+    private func retryMutation(for source: AgentSource) -> ConnectorMutation {
+        source == .claudeCode ? claudeRetryMutation : codexRetryMutation
+    }
+
+    private func setRetryMutation(_ mutation: ConnectorMutation, for source: AgentSource) {
+        switch source {
+        case .claudeCode:
+            claudeRetryMutation = mutation
+        case .codex:
+            codexRetryMutation = mutation
         }
     }
 
@@ -407,21 +484,14 @@ struct NudgeSettingsPane: View {
 }
 
 private extension AgentConnectorStatus {
-    var isInstalled: Bool {
-        switch self {
-        case .connected, .needsTrust:
-            return true
-        case .notInstalled, .installing, .failed:
-            return false
-        }
-    }
-
     var isFailure: Bool {
         if case .failed = self { return true }
         return false
     }
 }
 
+#if DEBUG
 #Preview {
     SettingsView()
 }
+#endif

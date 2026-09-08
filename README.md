@@ -35,7 +35,8 @@ native UI. Connect Claude Code or Codex explicitly in Nudge Settings.
 
 - Claude Code supports turn-completion notifications, multi-step questions
   with single, multiple, or freeform answers, and permission decisions for
-  once, the Claude session, or deny.
+  once or deny. Session-wide approval appears when Claude supplies a compatible
+  permission suggestion.
 - Codex supports turn-completion notifications and once/deny permission
   decisions. Arbitrary Codex questions remain in Codex's native UI.
 - After connecting Codex, verify and trust the Nudge hook once with `/hooks`.
