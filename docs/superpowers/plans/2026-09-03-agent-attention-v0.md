@@ -28,6 +28,7 @@
 - `Nudge/AgentAttention/Core/AgentAttentionModels.swift`: Codable bridge/domain value types.
 - `Nudge/AgentAttention/Core/AgentAttentionState.swift`: deterministic reducer, drafts, arbitration, and timer generations.
 - `Nudge/AgentAttention/Core/ConnectorConfiguration.swift`: Foundation-only additive Codex JSON transforms.
+- `Nudge/AgentAttention/Core/ConnectorLifecycle.swift`: persisted retry intent plus safe helper/plugin integrity and path checks.
 - `Nudge/AgentAttention/AgentAttentionCenter.swift`: observable runtime state, timers, callbacks, sound, host suppression/handoff.
 - `Nudge/AgentAttention/AgentBridgeServer.swift`: owner-only Unix socket and request sessions.
 - `Nudge/AgentAttention/AgentConnectorManager.swift`: connector status, stable helper installation, additive connect/disconnect.
@@ -36,6 +37,7 @@
 - `Nudge/AgentAttention/Resources/nudge_agent_hook.py`: Claude/Codex hook normalization and output mapping.
 - `Tests/NudgeAgentCoreTests/AgentAttentionStateTests.swift`: reducer contract tests.
 - `Tests/NudgeAgentCoreTests/ConnectorConfigurationTests.swift`: additive Codex configuration tests.
+- `Tests/NudgeAgentCoreTests/ConnectorLifecycleTests.swift`: connector retry, integrity, and managed-path tests.
 - `Tests/HookHelperTests/test_nudge_agent_hook.py`: helper mapping and fail-open tests.
 - `Nudge/ContentView.swift`: presentation lifecycle and hover forwarding.
 - `Nudge/Nudge/NudgeNotchView.swift`: content priority routing.
@@ -196,7 +198,7 @@ Response JSON uses `{ "kind": "answered", "answers": {...} }`, `approvedOnce`, `
 
 - [x] **Step 4: Implement and harden the Swift Unix socket**
 
-Bind `/tmp/com.nudge.max.agent-<uid>.sock`, unlink only that exact path, call `chmod(path, 0o600)`, cap each input line at 1 MiB, require `protocolVersion == 1`, decode on a background queue, and dispatch events to `@MainActor`. A waiting EOF calls an optional disconnect callback for that matching lease. `AgentBridgeSession` makes response/close idempotent under a lock; partial writes, `EINTR`, EOF, and invalid UTF-8 close fail-open.
+Create the private runtime directory `/tmp/com.nudge.max.agent-<uid>` with exact owner-only mode `0700`, bind its `bridge.sock` with exact mode `0600`, and unlink only the validated socket inode. Cap each input line at 1 MiB, require `protocolVersion == 1`, decode on a background queue, and dispatch events to `@MainActor`. A waiting EOF calls an optional disconnect callback for that matching lease. `AgentBridgeSession` makes response/close idempotent under a lock; partial writes, `EINTR`, EOF, and invalid UTF-8 close fail-open.
 
 - [x] **Step 5: Run helper tests and Swift syntax parsing**
 
@@ -217,14 +219,16 @@ git commit -m "feat: bridge coding agent hooks into Nudge"
 
 **Files:**
 - Create: `Nudge/AgentAttention/Core/ConnectorConfiguration.swift`
+- Create: `Nudge/AgentAttention/Core/ConnectorLifecycle.swift`
 - Create: `Nudge/AgentAttention/AgentConnectorManager.swift`
 - Create: `Tests/NudgeAgentCoreTests/ConnectorConfigurationTests.swift`
+- Create: `Tests/NudgeAgentCoreTests/ConnectorLifecycleTests.swift`
 
 **Interfaces:**
 - Produces: `AgentConnectorManager.shared`, `refresh()`, `connect(_:) async`, `disconnect(_:) async`.
 - Produces pure functions `addingNudgeCodexHooks(to:helperPath:)` and `removingNudgeCodexHooks(from:)` in `ConnectorConfiguration.swift` for structural tests.
 - Produces pure `claudePluginFiles(helperData:)` whose relative-path/data output is written by the manager.
-- Status values: `notInstalled`, `installing`, `needsTrust`, `connected`, `failed(String)`.
+- Status values: `notInstalled`, `installing`, `needsTrust`, `connected`, `failed(String)`; Settings labels a fully verified Claude connector as the more honest **Bereit** and persists the last requested mutation so failed disconnects retry disconnect rather than reconnect.
 
 - [x] **Step 1: Write additive merge tests first**
 
@@ -248,7 +252,7 @@ func testClaudePluginFilesContainExactIDsHooksAndTimeouts() throws {
     let files = claudePluginFiles(helperData: Data("helper".utf8))
     #expect(files.keys.contains(".claude-plugin/marketplace.json"))
     #expect(files.keys.contains("nudge-agent-attention/hooks/hooks.json"))
-    #expect(String(decoding: files["nudge-agent-attention/hooks/hooks.json"]!, as: UTF8.self).contains("${CLAUDE_PLUGIN_ROOT}/bin/nudge_agent_hook.py claude"))
+    #expect(String(decoding: files["nudge-agent-attention/hooks/hooks.json"]!, as: UTF8.self).contains("\"${CLAUDE_PLUGIN_ROOT}\"/bin/nudge_agent_hook.py claude"))
 }
 ```
 
@@ -262,11 +266,11 @@ Expected: FAIL because the merge functions do not exist.
 
 Copy the helper to `~/Library/Application Support/Nudge/AgentBridge/nudge-agent-hook`, mark it executable, write JSON through a sibling temporary file, and replace the target only after successful serialization. Identify every Nudge hook with the exact command marker `# com.nudge.max.agent-hook` or a dedicated `nudgeId` field accepted by that config schema.
 
-For Claude, generate this stable local marketplace/plugin tree beneath `~/Library/Application Support/Nudge/AgentBridge/ClaudeMarketplace`: `.claude-plugin/marketplace.json`, `nudge-agent-attention/.claude-plugin/plugin.json`, `nudge-agent-attention/hooks/hooks.json`, and `nudge-agent-attention/bin/nudge_agent_hook.py`. Use marketplace ID `nudge-local`, plugin ID `nudge-agent-attention`, version `0.1.0`, and a hook command of `${CLAUDE_PLUGIN_ROOT}/bin/nudge_agent_hook.py claude`. The hook file contains additive `Stop` (timeout `1`), `PreToolUse` matcher `AskUserQuestion` (timeout `86400`), and `PermissionRequest` matcher `*` (timeout `86400`). Run these noninteractive commands with the discovered Claude executable:
+For Claude, generate this stable local marketplace/plugin tree beneath `~/Library/Application Support/Nudge/AgentBridge/ClaudeMarketplace`: `.claude-plugin/marketplace.json`, `nudge-agent-attention/.claude-plugin/plugin.json`, `nudge-agent-attention/hooks/hooks.json`, and `nudge-agent-attention/bin/nudge_agent_hook.py`. Use marketplace ID `nudge-local`, plugin ID `nudge-agent-attention`, version `0.1.0`, and a hook command of `"${CLAUDE_PLUGIN_ROOT}"/bin/nudge_agent_hook.py claude`. The hook file contains additive `Stop` (timeout `1`), `PreToolUse` matcher `AskUserQuestion` (timeout `86400`), and `PermissionRequest` matcher `*` (timeout `86400`). Run these noninteractive commands with the discovered Claude executable:
 
 ```text
 claude plugin marketplace add <stable-marketplace-path> --scope user
-claude plugin install nudge-agent-attention@nudge-local --scope user --yes
+claude plugin install nudge-agent-attention@nudge-local --scope user
 ```
 
 For disconnect, call `claude plugin uninstall nudge-agent-attention@nudge-local --scope user --yes` followed by `claude plugin marketplace remove nudge-local --scope user`. Do not touch foreign plugins or settings. Discover Claude only from executable files at `~/.local/bin/claude`, `~/.claude/local/claude`, `/opt/homebrew/bin/claude`, or `/usr/local/bin/claude`; failure produces a clear status instead of invoking an arbitrary shell.
