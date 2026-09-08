@@ -78,6 +78,12 @@ public struct ClaudeConnectorRegistryState: Equatable, Sendable {
     }
 
     public var disconnectPlan: ClaudeDisconnectPlan {
+        if case .conflict = marketplace {
+            return ClaudeDisconnectPlan(
+                uninstallPlugin: false,
+                removeMarketplace: false
+            )
+        }
         return ClaudeDisconnectPlan(
             uninstallPlugin: pluginInstalledForUser,
             removeMarketplace: marketplace == .owned
@@ -235,7 +241,7 @@ public func removingNudgeCodexHooks(from object: Any) -> Any {
 }
 
 public func claudePluginFiles(helperData: Data) -> [String: Data] {
-    let command = "${CLAUDE_PLUGIN_ROOT}/bin/nudge_agent_hook.py claude"
+    let command = "\"${CLAUDE_PLUGIN_ROOT}\"/bin/nudge_agent_hook.py claude"
     let marketplace: [String: Any] = [
         "name": "nudge-local",
         "description": "Local Nudge integrations for coding agents.",

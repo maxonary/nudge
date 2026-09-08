@@ -153,8 +153,12 @@ public final class AgentBridgeServer: @unchecked Sendable {
         AgentBridgeSession
     ) -> Void
 
+    private static var runtimeDirectoryPath: String {
+        "/tmp/com.nudge.max.agent-\(getuid())"
+    }
+
     public static var socketPath: String {
-        "/tmp/com.nudge.max.agent-\(getuid()).sock"
+        "\(runtimeDirectoryPath)/bridge.sock"
     }
 
     private static let maximumLineBytes = 1024 * 1024
@@ -231,6 +235,9 @@ public final class AgentBridgeServer: @unchecked Sendable {
         guard path.utf8.count < MemoryLayout.size(ofValue: sockaddr_un().sun_path) else {
             return
         }
+        guard Self.ensureOwnedRuntimeDirectory(at: Self.runtimeDirectoryPath) else {
+            return
+        }
 
         let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { return }
@@ -248,12 +255,13 @@ public final class AgentBridgeServer: @unchecked Sendable {
         var address = sockaddr_un()
         address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
         address.sun_family = sa_family_t(AF_UNIX)
+        let sunPathSize = MemoryLayout.size(ofValue: address.sun_path)
         withUnsafeMutablePointer(to: &address.sun_path) { pathPointer in
             path.withCString { source in
                 _ = strlcpy(
                     UnsafeMutableRawPointer(pathPointer).assumingMemoryBound(to: CChar.self),
                     source,
-                    MemoryLayout.size(ofValue: address.sun_path)
+                    sunPathSize
                 )
             }
         }
@@ -268,16 +276,19 @@ public final class AgentBridgeServer: @unchecked Sendable {
             return
         }
 
-        guard let identity = Self.ownedSocketIdentity(at: path) else {
+        guard let boundIdentity = Self.socketIdentity(at: path, requiringPrivateMode: false) else {
             _ = Darwin.close(descriptor)
             return
         }
         guard Darwin.chmod(path, 0o600) == 0,
+              Self.ownedSocketIdentity(at: path) == boundIdentity,
+              Self.isOwnedRuntimeDirectory(at: Self.runtimeDirectoryPath),
               Darwin.listen(descriptor, SOMAXCONN) == 0 else {
             _ = Darwin.close(descriptor)
-            Self.unlinkOwnedSocket(at: path, matching: identity)
+            Self.unlinkOwnedSocket(at: path, matching: boundIdentity)
             return
         }
+        let identity = boundIdentity
 
         stateLock.lock()
         let shouldRun = self.runID == runID
@@ -340,6 +351,7 @@ public final class AgentBridgeServer: @unchecked Sendable {
                 }
                 self.handleConnection(
                     client,
+                    runID: runID,
                     session: session,
                     onEvent: onEvent,
                     onDisconnect: onDisconnect
@@ -350,6 +362,7 @@ public final class AgentBridgeServer: @unchecked Sendable {
 
     private func handleConnection(
         _ descriptor: Int32,
+        runID: UUID,
         session: AgentBridgeSession,
         onEvent: @escaping EventHandler,
         onDisconnect: DisconnectHandler?
@@ -363,9 +376,14 @@ public final class AgentBridgeServer: @unchecked Sendable {
         }
 
         let eventDelivered = DispatchSemaphore(value: 0)
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            defer { eventDelivered.signal() }
+            guard let self,
+                  session.isPending,
+                  isCurrentSession(session, for: runID) else {
+                return
+            }
             onEvent(envelope, session)
-            eventDelivered.signal()
         }
         eventDelivered.wait()
 
@@ -398,6 +416,15 @@ public final class AgentBridgeServer: @unchecked Sendable {
         stateLock.lock()
         sessions.removeValue(forKey: sessionID)
         stateLock.unlock()
+    }
+
+    private func isCurrentSession(
+        _ session: AgentBridgeSession,
+        for candidateRunID: UUID
+    ) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return runID == candidateRunID && sessions[session.id] === session
     }
 
     private func readLine(from descriptor: Int32) -> Data? {
@@ -450,29 +477,74 @@ public final class AgentBridgeServer: @unchecked Sendable {
         if result != 0 {
             return errno == ENOENT
         }
-        guard isOwnedSocket(metadata) else { return false }
+        guard isOwnedSocket(metadata, requiringPrivateMode: true) else { return false }
         return path.withCString { Darwin.unlink($0) } == 0 || errno == ENOENT
     }
 
     private static func ownedSocketIdentity(at path: String) -> SocketIdentity? {
+        socketIdentity(at: path, requiringPrivateMode: true)
+    }
+
+    private static func socketIdentity(
+        at path: String,
+        requiringPrivateMode: Bool
+    ) -> SocketIdentity? {
         guard path == Self.socketPath else { return nil }
         var metadata = stat()
         guard path.withCString({ Darwin.lstat($0, &metadata) }) == 0,
-              isOwnedSocket(metadata) else {
+              isOwnedSocket(metadata, requiringPrivateMode: requiringPrivateMode) else {
             return nil
         }
         return SocketIdentity(device: metadata.st_dev, inode: metadata.st_ino)
     }
 
     private static func unlinkOwnedSocket(at path: String, matching identity: SocketIdentity) {
-        guard ownedSocketIdentity(at: path) == identity else { return }
+        guard socketIdentity(at: path, requiringPrivateMode: false) == identity else { return }
         path.withCString { pointer in
             _ = Darwin.unlink(pointer)
         }
     }
 
-    private static func isOwnedSocket(_ metadata: stat) -> Bool {
-        (metadata.st_mode & S_IFMT) == S_IFSOCK && metadata.st_uid == geteuid()
+    private static func ensureOwnedRuntimeDirectory(at path: String) -> Bool {
+        guard path == Self.runtimeDirectoryPath else { return false }
+
+        var metadata = stat()
+        let existingResult = path.withCString { Darwin.lstat($0, &metadata) }
+        if existingResult == 0 {
+            return isOwnedRuntimeDirectory(metadata)
+        }
+        guard errno == ENOENT else { return false }
+
+        let createResult = path.withCString { Darwin.mkdir($0, 0o700) }
+        if createResult != 0, errno != EEXIST { return false }
+        if createResult == 0, Darwin.chmod(path, 0o700) != 0 { return false }
+        return isOwnedRuntimeDirectory(at: path)
+    }
+
+    private static func isOwnedRuntimeDirectory(at path: String) -> Bool {
+        guard path == Self.runtimeDirectoryPath else { return false }
+        var metadata = stat()
+        guard path.withCString({ Darwin.lstat($0, &metadata) }) == 0 else {
+            return false
+        }
+        return isOwnedRuntimeDirectory(metadata)
+    }
+
+    private static func isOwnedRuntimeDirectory(_ metadata: stat) -> Bool {
+        (metadata.st_mode & S_IFMT) == S_IFDIR
+            && metadata.st_uid == geteuid()
+            && (metadata.st_mode & 0o7777) == 0o700
+    }
+
+    private static func isOwnedSocket(
+        _ metadata: stat,
+        requiringPrivateMode: Bool
+    ) -> Bool {
+        guard (metadata.st_mode & S_IFMT) == S_IFSOCK,
+              metadata.st_uid == geteuid() else {
+            return false
+        }
+        return !requiringPrivateMode || (metadata.st_mode & 0o7777) == 0o600
     }
 
     private static func closeSocket(_ descriptor: Int32) {

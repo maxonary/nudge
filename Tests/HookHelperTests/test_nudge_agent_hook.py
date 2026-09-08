@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import stat
 import subprocess
 import tempfile
 import threading
@@ -375,6 +376,46 @@ class HookHelperTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout), {})
         self.assertEqual(result.stderr, "")
 
+    def test_socket_path_requires_private_parent_and_owner_only_socket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            socket_path = Path(directory) / "bridge.sock"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(socket_path))
+                socket_path.chmod(0o600)
+                environment = {"NUDGE_AGENT_SOCKET_PATH": str(socket_path)}
+
+                self.assertEqual(self.module._socket_path(environment), str(socket_path))
+
+                Path(directory).chmod(0o755)
+                self.assertIsNone(self.module._socket_path(environment))
+                Path(directory).chmod(0o700)
+
+                socket_path.chmod(0o660)
+                self.assertIsNone(self.module._socket_path(environment))
+
+    def test_socket_path_rejects_relative_and_symlinked_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_directory = Path(directory) / "runtime"
+            runtime_directory.mkdir(mode=0o700)
+            socket_path = runtime_directory / "bridge.sock"
+            socket_alias = runtime_directory / "bridge-alias.sock"
+            directory_alias = Path(directory) / "runtime-alias"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(socket_path))
+                socket_path.chmod(0o600)
+                socket_alias.symlink_to(socket_path)
+                directory_alias.symlink_to(runtime_directory, target_is_directory=True)
+
+                self.assertIsNone(self.module._socket_path({
+                    "NUDGE_AGENT_SOCKET_PATH": "relative.sock"
+                }))
+                self.assertIsNone(self.module._socket_path({
+                    "NUDGE_AGENT_SOCKET_PATH": str(socket_alias)
+                }))
+                self.assertIsNone(self.module._socket_path({
+                    "NUDGE_AGENT_SOCKET_PATH": str(directory_alias / "bridge.sock")
+                }))
+
     def test_completion_sends_once_and_does_not_wait_for_response(self):
         with tempfile.TemporaryDirectory() as directory:
             socket_path = Path(directory) / "bridge.sock"
@@ -384,6 +425,7 @@ class HookHelperTests(unittest.TestCase):
             def server():
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
                     listener.bind(str(socket_path))
+                    socket_path.chmod(0o600)
                     listener.listen(1)
                     with listener.accept()[0] as connection:
                         received.append(self.read_line(connection))
@@ -414,6 +456,7 @@ class HookHelperTests(unittest.TestCase):
                     def server():
                         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
                             listener.bind(str(socket_path))
+                            socket_path.chmod(0o600)
                             listener.listen(1)
                             with listener.accept()[0] as connection:
                                 self.read_line(connection)
@@ -443,9 +486,15 @@ class HookHelperTests(unittest.TestCase):
     @staticmethod
     def wait_for_path(path):
         deadline = time.monotonic() + 2
-        while not path.exists():
+        while True:
+            try:
+                metadata = path.lstat()
+                if stat.S_ISSOCK(metadata.st_mode) and stat.S_IMODE(metadata.st_mode) == 0o600:
+                    return
+            except FileNotFoundError:
+                pass
             if time.monotonic() >= deadline:
-                raise AssertionError(f"socket was not created: {path}")
+                raise AssertionError(f"secure socket was not created: {path}")
             time.sleep(0.005)
 
     @staticmethod

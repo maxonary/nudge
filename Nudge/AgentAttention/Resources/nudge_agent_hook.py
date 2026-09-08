@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import socket
+import stat
 import sys
 import uuid
 
@@ -248,9 +249,32 @@ def _first_compatible_suggestion(hook_input):
 
 
 def _socket_path(environ):
-    return environ.get("NUDGE_AGENT_SOCKET_PATH") or (
-        f"/tmp/com.nudge.max.agent-{os.getuid()}.sock"
+    path = environ.get("NUDGE_AGENT_SOCKET_PATH") or (
+        f"/tmp/com.nudge.max.agent-{os.getuid()}/bridge.sock"
     )
+    if not isinstance(path, str) or not os.path.isabs(path) or os.path.normpath(path) != path:
+        return None
+
+    try:
+        parent_metadata = os.lstat(os.path.dirname(path))
+        socket_metadata = os.lstat(path)
+    except OSError:
+        return None
+
+    owner = os.geteuid()
+    if (
+        not stat.S_ISDIR(parent_metadata.st_mode)
+        or parent_metadata.st_uid != owner
+        or stat.S_IMODE(parent_metadata.st_mode) != 0o700
+    ):
+        return None
+    if (
+        not stat.S_ISSOCK(socket_metadata.st_mode)
+        or socket_metadata.st_uid != owner
+        or stat.S_IMODE(socket_metadata.st_mode) != 0o600
+    ):
+        return None
+    return path
 
 
 def _read_response(connection):
@@ -282,8 +306,11 @@ def run(source, hook_input, environ=None):
         return {}
 
     wire = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+    socket_path = _socket_path(environment)
+    if socket_path is None:
+        return {}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.connect(_socket_path(environment))
+        connection.connect(socket_path)
         connection.sendall(wire)
         if envelope["event"]["type"] == "completion":
             return {}

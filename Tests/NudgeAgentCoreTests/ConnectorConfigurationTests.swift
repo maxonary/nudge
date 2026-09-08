@@ -282,11 +282,11 @@ struct ConnectorConfigurationTests {
         #expect(marketplaceOnly.connectPlan == .init(addMarketplace: false, installPlugin: true))
         #expect(marketplaceOnly.disconnectPlan == .init(uninstallPlugin: false, removeMarketplace: true))
         #expect(conflict.connectPlan == nil)
-        #expect(conflict.disconnectPlan == .init(uninstallPlugin: true, removeMarketplace: false))
+        #expect(conflict.disconnectPlan == .init(uninstallPlugin: false, removeMarketplace: false))
     }
 
     @Test
-    func claudeDisconnectWithForeignMarketplaceRunsOnlyExactPluginCleanup() {
+    func claudeDisconnectWithForeignMarketplaceLeavesAmbiguousPluginUntouched() {
         let state = ClaudeConnectorRegistryState(
             pluginInstalledForUser: true,
             marketplace: .conflict(actualPath: "/someone-else")
@@ -300,7 +300,7 @@ struct ConnectorConfigurationTests {
             removeMarketplace: { attempts.append(.removeMarketplace) }
         )
 
-        #expect(attempts == [.uninstallPlugin])
+        #expect(attempts.isEmpty)
         #expect(failures.isEmpty)
     }
 
@@ -367,28 +367,28 @@ struct ConnectorConfigurationTests {
             """
         )
         let expectedHooks = try jsonObject(
-            """
+            #"""
             {
               "description": "Routes Claude Code attention events to Nudge.",
               "hooks": {
                 "Stop": [{"hooks": [{
                   "type": "command",
-                  "command": "${CLAUDE_PLUGIN_ROOT}/bin/nudge_agent_hook.py claude",
+                  "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/nudge_agent_hook.py claude",
                   "timeout": 1
                 }]}],
                 "PreToolUse": [{"matcher": "AskUserQuestion", "hooks": [{
                   "type": "command",
-                  "command": "${CLAUDE_PLUGIN_ROOT}/bin/nudge_agent_hook.py claude",
+                  "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/nudge_agent_hook.py claude",
                   "timeout": 86400
                 }]}],
                 "PermissionRequest": [{"matcher": "*", "hooks": [{
                   "type": "command",
-                  "command": "${CLAUDE_PLUGIN_ROOT}/bin/nudge_agent_hook.py claude",
+                  "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/nudge_agent_hook.py claude",
                   "timeout": 86400
                 }]}]
               }
             }
-            """
+            """#
         )
 
         #expect(try decodedJSON(in: files, at: ".claude-plugin/marketplace.json") == canonicalJSONData(expectedMarketplace))
