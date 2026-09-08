@@ -5,6 +5,8 @@ final class AgentPanelFocusController {
     private weak var attachedWindow: NudgeSkyLightWindow?
     private var previousApplication: NSRunningApplication?
 
+    nonisolated init() {}
+
     func attach(window: NSWindow) {
         attachedWindow = window as? NudgeSkyLightWindow
     }
