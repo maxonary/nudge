@@ -38,6 +38,15 @@
 		4056511EC8FE68B0B8A7AE0F /* NudgeRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A93A85D5B4F91DCE1C994D /* NudgeRoster.swift */; };
 		5D801A1AF37495A88EB59F2E /* NudgeTeamSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41DF965EE177D3892EF7B81 /* NudgeTeamSecret.swift */; };
 		9F18C9B556E15061567A3991 /* NudgeStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 407FCC9217CDCECC553F619E /* NudgeStats.swift */; };
+		AA1000000000000000000001 /* AgentAttentionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000001 /* AgentAttentionModels.swift */; };
+		AA1000000000000000000002 /* AgentAttentionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000002 /* AgentAttentionState.swift */; };
+		AA1000000000000000000003 /* ConnectorConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000003 /* ConnectorConfiguration.swift */; };
+		AA1000000000000000000004 /* AgentBridgeServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000004 /* AgentBridgeServer.swift */; };
+		AA1000000000000000000005 /* AgentConnectorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000005 /* AgentConnectorManager.swift */; };
+		AA1000000000000000000006 /* AgentAttentionCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000006 /* AgentAttentionCenter.swift */; };
+		AA1000000000000000000007 /* AgentAttentionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000007 /* AgentAttentionView.swift */; };
+		AA1000000000000000000008 /* AgentPanelFocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000008 /* AgentPanelFocusController.swift */; };
+		AA1000000000000000000009 /* nudge_agent_hook.py in Resources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000009 /* nudge_agent_hook.py */; };
 		AAA000000000000000000020 /* NudgeConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000010 /* NudgeConstants.swift */; };
 		AAA000000000000000000021 /* NudgeIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000011 /* NudgeIdentity.swift */; };
 		AAA000000000000000000022 /* NudgeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000012 /* NudgeTransport.swift */; };
@@ -109,6 +118,15 @@
 		407FCC9217CDCECC553F619E /* NudgeStats.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeStats.swift; sourceTree = "<group>"; };
 		57B4A5914D74B087D00FF461 /* NudgeGifPickerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeGifPickerView.swift; sourceTree = "<group>"; };
 		74A93A85D5B4F91DCE1C994D /* NudgeRoster.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NudgeRoster.swift; sourceTree = "<group>"; };
+		AA2000000000000000000001 /* AgentAttentionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttentionModels.swift; sourceTree = "<group>"; };
+		AA2000000000000000000002 /* AgentAttentionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttentionState.swift; sourceTree = "<group>"; };
+		AA2000000000000000000003 /* ConnectorConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectorConfiguration.swift; sourceTree = "<group>"; };
+		AA2000000000000000000004 /* AgentBridgeServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridgeServer.swift; sourceTree = "<group>"; };
+		AA2000000000000000000005 /* AgentConnectorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorManager.swift; sourceTree = "<group>"; };
+		AA2000000000000000000006 /* AgentAttentionCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttentionCenter.swift; sourceTree = "<group>"; };
+		AA2000000000000000000007 /* AgentAttentionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttentionView.swift; sourceTree = "<group>"; };
+		AA2000000000000000000008 /* AgentPanelFocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanelFocusController.swift; sourceTree = "<group>"; };
+		AA2000000000000000000009 /* nudge_agent_hook.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = nudge_agent_hook.py; sourceTree = "<group>"; };
 		AAA000000000000000000010 /* NudgeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeConstants.swift; sourceTree = "<group>"; };
 		AAA000000000000000000011 /* NudgeIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeIdentity.swift; sourceTree = "<group>"; };
 		AAA000000000000000000012 /* NudgeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeTransport.swift; sourceTree = "<group>"; };
@@ -298,6 +316,7 @@
 		14CEF4142C5CAED300855D72 /* Nudge */ = {
 			isa = PBXGroup;
 			children = (
+				AA3000000000000000000001 /* AgentAttention */,
 				AAA000000000000000000030 /* Nudge */,
 				11F748672EC9AC9600F841DB /* XPCHelperClient */,
 				116398942DF5D6B40052E6AF /* Providers */,
@@ -393,6 +412,38 @@
 				1113ABC42E80E27000EC13B2 /* Views */,
 			);
 			path = Shelf;
+			sourceTree = "<group>";
+		};
+		AA3000000000000000000001 /* AgentAttention */ = {
+			isa = PBXGroup;
+			children = (
+				AA3000000000000000000002 /* Core */,
+				AA2000000000000000000004 /* AgentBridgeServer.swift */,
+				AA2000000000000000000005 /* AgentConnectorManager.swift */,
+				AA2000000000000000000006 /* AgentAttentionCenter.swift */,
+				AA2000000000000000000007 /* AgentAttentionView.swift */,
+				AA2000000000000000000008 /* AgentPanelFocusController.swift */,
+				AA3000000000000000000003 /* Resources */,
+			);
+			path = AgentAttention;
+			sourceTree = "<group>";
+		};
+		AA3000000000000000000002 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				AA2000000000000000000001 /* AgentAttentionModels.swift */,
+				AA2000000000000000000002 /* AgentAttentionState.swift */,
+				AA2000000000000000000003 /* ConnectorConfiguration.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		AA3000000000000000000003 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				AA2000000000000000000009 /* nudge_agent_hook.py */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		AAA000000000000000000030 /* Nudge */ = {
@@ -568,6 +619,7 @@
 			files = (
 				14CEF41D2C5CAED400855D72 /* Preview Assets.xcassets in Resources */,
 				14CEF41A2C5CAED400855D72 /* Assets.xcassets in Resources */,
+				AA1000000000000000000009 /* nudge_agent_hook.py in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -578,6 +630,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA1000000000000000000001 /* AgentAttentionModels.swift in Sources */,
+				AA1000000000000000000002 /* AgentAttentionState.swift in Sources */,
+				AA1000000000000000000003 /* ConnectorConfiguration.swift in Sources */,
+				AA1000000000000000000004 /* AgentBridgeServer.swift in Sources */,
+				AA1000000000000000000005 /* AgentConnectorManager.swift in Sources */,
+				AA1000000000000000000006 /* AgentAttentionCenter.swift in Sources */,
+				AA1000000000000000000007 /* AgentAttentionView.swift in Sources */,
+				AA1000000000000000000008 /* AgentPanelFocusController.swift in Sources */,
 				11CC44A22CEE614100C7244B /* NudgeViewCoordinator.swift in Sources */,
 				B186543C2C6F49AE000B926A /* ShortcutConstants.swift in Sources */,
 				1194E8872EA6DDA7009C82D6 /* NudgeSkyLightWindow.swift in Sources */,
