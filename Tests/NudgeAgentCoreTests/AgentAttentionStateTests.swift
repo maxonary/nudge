@@ -33,6 +33,17 @@ struct AgentAttentionStateTests {
     }
 
     @Test
+    func textEditingBlocksCollapseUntilEditingEnds() {
+        var state = AgentAttentionState(activeRequest: .question(.fixture(id: "question")))
+
+        state.setEditing(true)
+        #expect(state.armCollapse() == nil)
+
+        state.setEditing(false)
+        #expect(state.armCollapse() != nil)
+    }
+
+    @Test
     func questionDraftSurvivesCollapseAndBackNavigation() {
         var state = AgentAttentionState(activeRequest: .question(.twoQuestionFixture))
 
@@ -64,6 +75,86 @@ struct AgentAttentionStateTests {
 
         #expect(!hoverCollapsed)
         #expect(!editCollapsed)
+    }
+
+    @Test
+    func claimingInteractiveWorkClearsAnOlderCompletion() {
+        var state = AgentAttentionState(completion: completionEnvelope().completion)
+
+        let claimed = state.claim(.question(.fixture(id: "question")))
+
+        #expect(claimed)
+        #expect(state.completion == nil)
+        #expect(state.activeRequest?.id == "question")
+        #expect(state.visible)
+    }
+
+    @Test
+    func completionDismissalOnlyMatchesTheExpectedIdentifier() {
+        var state = AgentAttentionState(completion: completionEnvelope().completion)
+
+        state.dismissCompletion(id: "different")
+        #expect(state.completion?.id == "completion")
+        #expect(state.visible)
+
+        state.dismissCompletion(id: "completion")
+        #expect(state.completion == nil)
+        #expect(!state.visible)
+    }
+
+    @Test
+    func submissionMapsEveryExactPromptToItsAnswerKind() {
+        var state = AgentAttentionState(activeRequest: .question(.submissionFixture))
+
+        state.answer(.single("Ship"), at: 0)
+        state.answer(.multiple(["Tests", "Docs"]), at: 1)
+        state.answer(.text("Keep the first cut compact."), at: 2)
+
+        #expect(state.answersForSubmission() == [
+            "Choose the release mode.": "Ship",
+            "What should be included?": "Docs, Tests",
+            "Anything else?": "Keep the first cut compact."
+        ])
+    }
+
+    @Test
+    func submissionRejectsIncompleteOrEmptyDrafts() {
+        var state = AgentAttentionState(activeRequest: .question(.submissionFixture))
+
+        state.answer(.single("Ship"), at: 0)
+        state.answer(.multiple([]), at: 1)
+        state.answer(.text("   "), at: 2)
+        #expect(state.answersForSubmission() == nil)
+
+        state.answer(.multiple(["Docs"]), at: 1)
+        #expect(state.answersForSubmission() == nil)
+
+        state.answer(.text("Ready"), at: 2)
+        #expect(state.answersForSubmission() != nil)
+    }
+
+    @Test
+    func multipleSubmissionUsesQuestionOptionOrder() {
+        var state = AgentAttentionState(activeRequest: .question(.submissionFixture))
+
+        state.answer(.single("Ship"), at: 0)
+        state.answer(.multiple(["Tests", "Docs"]), at: 1)
+        state.answer(.text("Ready"), at: 2)
+
+        #expect(state.answersForSubmission()?["What should be included?"] == "Docs, Tests")
+    }
+
+    @Test
+    func freeformSubmissionWorksForEveryDisplayedQuestion() {
+        var state = AgentAttentionState(activeRequest: .question(.twoQuestionFixture))
+
+        state.answer(.text("A custom combination"), at: 0)
+        state.answer(.text("Because it fits"), at: 1)
+
+        #expect(state.answersForSubmission() == [
+            "Choose every applicable option.": "A custom combination",
+            "Explain your choice.": "Because it fits"
+        ])
     }
 
     @Test
@@ -176,6 +267,13 @@ private func completionEnvelope() -> AgentEventEnvelope {
     )
 }
 
+private extension AgentEventEnvelope {
+    var completion: AgentCompletion? {
+        guard case let .completion(completion) = event else { return nil }
+        return completion
+    }
+}
+
 private extension AgentQuestionSet {
     static func fixture(id: String) -> Self {
         .init(
@@ -213,6 +311,41 @@ private extension AgentQuestionSet {
             .init(
                 id: "second",
                 prompt: "Explain your choice.",
+                choices: [],
+                multiSelect: false,
+                allowsFreeform: true
+            )
+        ]
+    )
+
+    static let submissionFixture = Self(
+        id: "submission",
+        header: "Release questions",
+        questions: [
+            .init(
+                id: "mode",
+                prompt: "Choose the release mode.",
+                choices: [
+                    .init(label: "Draft", description: "Keep iterating."),
+                    .init(label: "Ship", description: "Publish the change.")
+                ],
+                multiSelect: false,
+                allowsFreeform: true
+            ),
+            .init(
+                id: "scope",
+                prompt: "What should be included?",
+                choices: [
+                    .init(label: "Docs", description: "Update documentation."),
+                    .init(label: "Tests", description: "Run verification."),
+                    .init(label: "Demo", description: "Include a demo.")
+                ],
+                multiSelect: true,
+                allowsFreeform: true
+            ),
+            .init(
+                id: "notes",
+                prompt: "Anything else?",
                 choices: [],
                 multiSelect: false,
                 allowsFreeform: true

@@ -33,6 +33,7 @@ extension SkyLightOperator {
 
 class NudgeSkyLightWindow: NSPanel {
     private var isSkyLightEnabled: Bool = false
+    var allowsKeyFocus: Bool = false
     
     override init(
         contentRect: NSRect,
@@ -109,6 +110,6 @@ class NudgeSkyLightWindow: NSPanel {
     
     private var observers: Set<AnyCancellable> = []
     
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { allowsKeyFocus }
     override var canBecomeMain: Bool { false }
 }

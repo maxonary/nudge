@@ -13,6 +13,9 @@ struct ContentView: View {
     @EnvironmentObject var vm: NudgeViewModel
     @ObservedObject var coordinator = NudgeViewCoordinator.shared
     @ObservedObject var transport = NudgeTransport.shared
+    @ObservedObject var agentAttention = AgentAttentionCenter.shared
+
+    private let agentFocusController: AgentPanelFocusController
 
     @State private var hoverTask: Task<Void, Never>?
     @State private var autoCloseTask: Task<Void, Never>?
@@ -21,6 +24,10 @@ struct ContentView: View {
     @State private var haptics: Bool = false
 
     private let animationSpring = Animation.interactiveSpring(response: 0.38, dampingFraction: 0.8, blendDuration: 0)
+
+    init(agentFocusController: AgentPanelFocusController = AgentPanelFocusController()) {
+        self.agentFocusController = agentFocusController
+    }
 
     private var topCornerRadius: CGFloat {
         ((vm.notchState == .open) && Defaults[.cornerRadiusScaling])
@@ -110,6 +117,14 @@ struct ContentView: View {
         .onChange(of: transport.lastIncoming) { _, ping in
             handleIncoming(ping)
         }
+        .onChange(of: agentAttention.hasVisibleAgentContent) { _, isVisible in
+            handleAgentVisibility(isVisible)
+        }
+        .onAppear {
+            if agentAttention.hasVisibleAgentContent {
+                doOpen()
+            }
+        }
     }
 
     @ViewBuilder
@@ -126,7 +141,7 @@ struct ContentView: View {
                 .zIndex(2)
 
             if vm.notchState == .open {
-                NudgeNotchView()
+                NudgeNotchView(agentFocusController: agentFocusController)
                     .transition(
                         .scale(scale: 0.8, anchor: .top)
                             .combined(with: .opacity)
@@ -144,6 +159,12 @@ struct ContentView: View {
     }
 
     private func handleHover(_ hovering: Bool) {
+        if hovering {
+            agentAttention.hoverBegan()
+        } else {
+            agentAttention.hoverEnded()
+        }
+
         if coordinator.firstLaunch { return }
         hoverTask?.cancel()
 
@@ -167,6 +188,10 @@ struct ContentView: View {
                 await MainActor.run {
                     withAnimation(animationSpring) { self.isHovering = false }
                     if self.vm.notchState == .open {
+                        if self.agentAttention.state.activeRequest != nil
+                            || self.agentAttention.state.completion != nil {
+                            return
+                        }
                         // Don't auto-close while showing an incoming ping
                         if let ping = self.transport.lastIncoming,
                            Date().timeIntervalSince(ping.receivedAt) < 6 {
@@ -212,10 +237,24 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 if !self.isHovering {
+                    if self.agentAttention.hasVisibleAgentContent { return }
                     self.vm.close()
                 }
             }
         }
+    }
+
+    private func handleAgentVisibility(_ isVisible: Bool) {
+        if isVisible {
+            doOpen()
+            return
+        }
+
+        if let ping = transport.lastIncoming,
+           Date().timeIntervalSince(ping.receivedAt) < 6 {
+            return
+        }
+        vm.close()
     }
 }
 

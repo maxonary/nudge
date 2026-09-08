@@ -29,6 +29,7 @@ public struct AgentAttentionState: Codable, Equatable, Sendable {
         guard activeRequest == nil else { return false }
 
         activeRequest = request
+        completion = nil
         drafts = Self.drafts(for: request)
         questionIndex = 0
         visible = true
@@ -103,6 +104,61 @@ public struct AgentAttentionState: Codable, Equatable, Sendable {
         drafts = []
         questionIndex = 0
         visible = completion != nil
+    }
+
+    public mutating func dismissCompletion(id: String) {
+        guard completion?.id == id else { return }
+
+        completion = nil
+        if activeRequest == nil {
+            visible = false
+        }
+    }
+
+    public func answersForSubmission() -> [String: String]? {
+        guard case let .question(questionSet) = activeRequest,
+              !questionSet.questions.isEmpty,
+              questionSet.questions.count == drafts.count else {
+            return nil
+        }
+
+        var answers: [String: String] = [:]
+        for (question, draft) in zip(questionSet.questions, drafts) {
+            guard !question.prompt.isEmpty, let draft else { return nil }
+
+            let value: String
+            switch draft {
+            case let .single(label):
+                guard !question.multiSelect,
+                      question.choices.contains(where: { $0.label == label }),
+                      !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return nil
+                }
+                value = label
+
+            case let .multiple(labels):
+                guard question.multiSelect, !labels.isEmpty else { return nil }
+                let selected = Set(labels)
+                let ordered = question.choices
+                    .map(\.label)
+                    .filter(selected.contains)
+                guard selected.count == labels.count,
+                      ordered.count == labels.count else {
+                    return nil
+                }
+                value = ordered.joined(separator: ", ")
+
+            case let .text(text):
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                value = trimmed
+            }
+
+            answers[question.prompt] = value
+        }
+
+        guard answers.count == questionSet.questions.count else { return nil }
+        return answers
     }
 
     private static func drafts(for request: ActiveAgentRequest?) -> [AgentAnswer?] {
