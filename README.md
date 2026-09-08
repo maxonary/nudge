@@ -28,6 +28,28 @@ Nudge is a fork of [Nudge](https://github.com/TheBoredTeam/boring.notch).
 Everything that doesn't serve the team-ping flow is disabled in this build;
 see `TODO_V2_CLEANUP.md` for the dormant code still on disk.
 
+## Agent Attention (V0)
+
+Nudge can surface coding-agent work in the notch without replacing the agent's
+native UI. Connect Claude Code or Codex explicitly in Nudge Settings.
+
+- Claude Code supports turn-completion notifications, multi-step questions
+  with single, multiple, or freeform answers, and permission decisions for
+  once or deny. Session-wide approval appears when Claude supplies a compatible
+  permission suggestion.
+- Codex supports turn-completion notifications and once/deny permission
+  decisions. Arbitrary Codex questions remain in Codex's native UI.
+- After connecting Codex, verify and trust the Nudge hook once with `/hooks`.
+  Already-running Claude Code sessions need `/reload-plugins` or a restart.
+- Busy or unanswered requests fail open to the agent; Nudge keeps no queue.
+- Nudge reliably activates the originating host app, but exact terminal-tab
+  targeting depends on the host and is not guaranteed.
+- Agent payloads stay on-device over an owner-only Unix socket. They are not
+  persisted or uploaded. Human Nudge/ntfy pings remain a separate feature.
+- AI summaries, history, and an inbox are intentionally deferred. Disconnect
+  removes only Nudge-owned registrations; the inactive helper may remain on
+  disk locally.
+
 ## The shared topic nonce
 
 The transport is [ntfy.sh](https://ntfy.sh) — a public, free, no-account pub/sub
