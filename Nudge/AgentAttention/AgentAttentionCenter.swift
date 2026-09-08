@@ -4,6 +4,11 @@ import Foundation
 
 @MainActor
 final class AgentAttentionCenter: ObservableObject {
+    private struct HandledQuestionKey: Hashable {
+        let source: String
+        let requestID: String
+    }
+
     static let shared = AgentAttentionCenter()
 
     @Published private(set) var state = AgentAttentionState()
@@ -15,6 +20,7 @@ final class AgentAttentionCenter: ObservableObject {
     private var collapseTask: Task<Void, Never>?
     private var lastCompletionID: String?
     private var activationObserver: NSObjectProtocol?
+    private var lastHandledQuestionKey: HandledQuestionKey?
 
     init(workspace: NSWorkspace = .shared) {
         activationObserver = workspace.notificationCenter.addObserver(
@@ -59,8 +65,14 @@ final class AgentAttentionCenter: ObservableObject {
             receiveCompletion(completion, envelope: envelope, session: session)
 
         case let .question(questionSet):
-            guard !questionSet.questions.isEmpty,
-                  state.claim(.question(questionSet)) else {
+            guard let key = questionKey(for: envelope, questionSet: questionSet),
+                  isValid(questionSet),
+                  lastHandledQuestionKey != key else {
+                session.handoff()
+                return
+            }
+            guard state.claim(.question(questionSet)) else {
+                rememberHandledQuestion(key)
                 session.handoff()
                 return
             }
@@ -120,6 +132,7 @@ final class AgentAttentionCenter: ObservableObject {
             return
         }
 
+        rememberActiveQuestionAsHandled()
         activeSession = nil
         activeEnvelope = nil
         cancelCollapse()
@@ -142,10 +155,11 @@ final class AgentAttentionCenter: ObservableObject {
     }
 
     func jumpOrHandoff() {
-        let envelope = presentedEnvelope
+        let envelope = activeEnvelope ?? completionEnvelope
 
         if let request = state.activeRequest {
             let session = activeSession
+            rememberActiveQuestionAsHandled()
             activeSession = nil
             activeEnvelope = nil
             cancelCollapse()
@@ -236,7 +250,7 @@ final class AgentAttentionCenter: ObservableObject {
         case let .completion(completion):
             return completion.source == envelope.source
         case .question:
-            return true
+            return envelope.source == .claudeCode
         case let .approval(approval):
             return approval.source == envelope.source
                 && (!approval.allowsClaudeSessionRule || envelope.source == .claudeCode)
@@ -300,6 +314,7 @@ final class AgentAttentionCenter: ObservableObject {
 
     private func clearActiveRequest(id: String?) {
         guard let id else { return }
+        rememberActiveQuestionAsHandled()
         activeSession = nil
         activeEnvelope = nil
         cancelCollapse()
@@ -311,6 +326,7 @@ final class AgentAttentionCenter: ObservableObject {
 
         if activeEnvelope?.host.bundleID == bundleID, let request = state.activeRequest {
             let session = activeSession
+            rememberActiveQuestionAsHandled()
             activeSession = nil
             activeEnvelope = nil
             cancelCollapse()
@@ -351,6 +367,42 @@ final class AgentAttentionCenter: ObservableObject {
         let storedPreference = UserDefaults.standard.object(forKey: "nudgePlaySoundOnReceive") as? Bool
         guard storedPreference ?? true else { return }
         NSSound(named: NSSound.Name("Pop"))?.play()
+    }
+
+    private func questionKey(
+        for envelope: AgentEventEnvelope,
+        questionSet: AgentQuestionSet
+    ) -> HandledQuestionKey? {
+        guard envelope.source == .claudeCode,
+              !questionSet.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return HandledQuestionKey(source: envelope.source.rawValue, requestID: questionSet.id)
+    }
+
+    private func isValid(_ questionSet: AgentQuestionSet) -> Bool {
+        guard !questionSet.questions.isEmpty else { return false }
+
+        let prompts = questionSet.questions.map(\.prompt)
+        guard prompts.allSatisfy({
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else {
+            return false
+        }
+        return Set(prompts).count == prompts.count
+    }
+
+    private func rememberActiveQuestionAsHandled() {
+        guard let envelope = activeEnvelope,
+              case let .question(questionSet) = envelope.event,
+              let key = questionKey(for: envelope, questionSet: questionSet) else {
+            return
+        }
+        rememberHandledQuestion(key)
+    }
+
+    private func rememberHandledQuestion(_ key: HandledQuestionKey) {
+        lastHandledQuestionKey = key
     }
 }
 

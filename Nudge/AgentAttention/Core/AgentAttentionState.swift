@@ -103,6 +103,7 @@ public struct AgentAttentionState: Codable, Equatable, Sendable {
         activeRequest = nil
         drafts = []
         questionIndex = 0
+        isEditing = false
         visible = completion != nil
     }
 

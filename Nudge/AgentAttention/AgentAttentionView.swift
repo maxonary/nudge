@@ -24,7 +24,8 @@ struct AgentAttentionView: View {
             }
         }
         .onDisappear {
-            finishTextEntry()
+            endTextEntry()
+            focusController.restorePreviousApplication()
         }
     }
 
@@ -82,22 +83,23 @@ struct AgentAttentionView: View {
                             if focused {
                                 startTextEntry()
                             } else {
-                                finishTextEntry()
+                                endTextEntry()
                             }
                         }
                         .accessibilityLabel("Eigene Antwort für Frage \(index + 1)")
 
                     if index == questionSet.questions.index(before: questionSet.questions.endIndex) {
                         Button("Antworten") {
-                            finishTextEntry()
+                            endTextEntry()
                             center.submitQuestion()
+                            focusController.restorePreviousApplication()
                         }
                         .agentPrimaryButton()
                         .disabled(center.state.answersForSubmission() == nil)
                         .accessibilityLabel("Alle Antworten senden")
                     } else {
                         Button("Weiter") {
-                            finishTextEntry()
+                            endTextEntry()
                             center.moveQuestion(to: index + 1)
                         }
                         .agentPrimaryButton()
@@ -116,7 +118,7 @@ struct AgentAttentionView: View {
     ) -> some View {
         let selected = isSelected(choice.label, question: question, at: index)
         return Button {
-            finishTextEntry()
+            endTextEntry()
             if question.multiSelect {
                 toggle(choice.label, question: question, at: index)
             } else {
@@ -162,7 +164,7 @@ struct AgentAttentionView: View {
         HStack(spacing: 7) {
             ForEach(questionSet.questions.indices, id: \.self) { index in
                 Button {
-                    finishTextEntry()
+                    endTextEntry()
                     center.moveQuestion(to: index)
                 } label: {
                     Circle()
@@ -190,8 +192,8 @@ struct AgentAttentionView: View {
                 .foregroundStyle(.white.opacity(0.9))
                 .lineLimit(2)
 
-            if let cwd = approval.cwd, !cwd.isEmpty {
-                Text(cwd)
+            if let locationContext {
+                Label(locationContext, systemImage: "folder")
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.5))
                     .lineLimit(1)
@@ -267,6 +269,13 @@ struct AgentAttentionView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(1)
+                        if let locationContext, locationContext != completion.context {
+                            Label(locationContext, systemImage: "folder")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.45))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
 
                     Spacer(minLength: 8)
@@ -332,6 +341,17 @@ struct AgentAttentionView: View {
     private var jumpLabel: String {
         guard let host = center.presentedEnvelope?.host else { return "Zum Agent" }
         return center.jumpLabel(for: host)
+    }
+
+    private var locationContext: String? {
+        guard let envelope = center.presentedEnvelope else { return nil }
+        if let project = envelope.project?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !project.isEmpty {
+            return project
+        }
+
+        let cwd = envelope.cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cwd.isEmpty ? nil : cwd
     }
 
     private func freeformBinding(at index: Int) -> Binding<String> {
@@ -402,12 +422,12 @@ struct AgentAttentionView: View {
         }
     }
 
-    private func finishTextEntry() {
+    private func endTextEntry() {
         guard textEntryActive else { return }
         textEntryActive = false
         freeformFocused = false
         center.endEditing()
-        focusController.restorePreviousApplication()
+        focusController.endTextEntry()
     }
 
     private func startTextEntry() {

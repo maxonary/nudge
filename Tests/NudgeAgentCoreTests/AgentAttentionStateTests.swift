@@ -44,6 +44,19 @@ struct AgentAttentionStateTests {
     }
 
     @Test
+    func clearingAnEditedRequestDoesNotBlockTheNextCollapse() {
+        var state = AgentAttentionState(activeRequest: .question(.fixture(id: "first")))
+        state.setEditing(true)
+
+        state.clearRequest(id: "first")
+        let claimed = state.claim(.question(.fixture(id: "second")))
+
+        #expect(claimed)
+        #expect(!state.isEditing)
+        #expect(state.armCollapse() != nil)
+    }
+
+    @Test
     func questionDraftSurvivesCollapseAndBackNavigation() {
         var state = AgentAttentionState(activeRequest: .question(.twoQuestionFixture))
 

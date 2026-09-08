@@ -12,7 +12,10 @@ final class AgentPanelFocusController {
     }
 
     func beginTextEntry(window: NSWindow? = nil) {
-        guard let panel = (window as? NudgeSkyLightWindow) ?? attachedWindow else { return }
+        if let providedPanel = window as? NudgeSkyLightWindow {
+            attachedWindow = providedPanel
+        }
+        guard let panel = attachedWindow else { return }
 
         if previousApplication == nil,
            let frontmost = NSWorkspace.shared.frontmostApplication,
@@ -25,15 +28,18 @@ final class AgentPanelFocusController {
         panel.makeKey()
     }
 
+    func endTextEntry() {
+        attachedWindow?.allowsKeyFocus = false
+        if attachedWindow?.isKeyWindow == true {
+            attachedWindow?.resignKey()
+        }
+    }
+
     func restorePreviousApplication() {
-        let panel = attachedWindow
+        endTextEntry()
+
         let previous = previousApplication
         previousApplication = nil
-
-        panel?.allowsKeyFocus = false
-        if panel?.isKeyWindow == true {
-            panel?.resignKey()
-        }
 
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier
                 == NSRunningApplication.current.processIdentifier else {
