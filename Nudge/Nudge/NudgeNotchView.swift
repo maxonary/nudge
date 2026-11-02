@@ -10,12 +10,12 @@ struct NudgeNotchView: View {
     @ObservedObject var transport: NudgeTransport = .shared
     @ObservedObject var identity: NudgeIdentity = .shared
     @ObservedObject var teamSecret: NudgeTeamSecret = .shared
+    @ObservedObject var draft = NudgeDraft.shared
     @ObservedObject var roster: NudgeRoster = .shared
     @EnvironmentObject var vm: NudgeViewModel
 
     @State private var sending: String?
     @State private var sendError: String?
-    @State private var messageText: String = ""
     @FocusState private var messageFocused: Bool
 
     private var others: [String] {
@@ -23,11 +23,20 @@ struct NudgeNotchView: View {
     }
 
     var body: some View {
-        Group {
-            if let ping = transport.lastIncoming, isRecent(ping) {
-                incomingView(for: ping)
-            } else {
-                sendView
+        VStack(spacing: 8) {
+            Group {
+                if let ping = transport.lastIncoming, isRecent(ping), !draft.isShowingSentConfirmation, !draft.isAwaitingReceipt, !draft.isPickingGIF {
+                    incomingView(for: ping)
+                } else {
+                    sendView
+                }
+            }
+            if draft.isPickingGIF {
+                NudgeGifPickerView {
+                    draft.isPickingGIF = false
+                }
+                .frame(height: gifPickerExtraHeight - 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 12)
@@ -52,19 +61,48 @@ struct NudgeNotchView: View {
                     .foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        messageField
-                        gifButton
+                    Grid(verticalSpacing: 8) {
+                        if let gif = draft.gif {
+                            GridRow {
+                                AnimatedGifView(url: gif.sendURL)
+                                    .frame(height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(alignment: .topTrailing) {
+                                        Button {
+                                            draft.gif = nil
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .symbolRenderingMode(.palette)
+                                                .foregroundStyle(.white, .black.opacity(0.7))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(4)
+                                        .help("Remove GIF")
+                                        .accessibilityLabel("Remove GIF")
+                                    }
+                                    .accessibilityLabel("GIF preview: \(gif.description)")
+                                    .gridCellUnsizedAxes(.horizontal)
+                            }
+                        }
+                        GridRow {
+                            HStack(spacing: 8) {
+                                messageField
+                                gifButton
+                            }
+                            .gridCellUnsizedAxes(.horizontal)
+                        }
+                        GridRow {
+                            HStack(spacing: 10) {
+                                ForEach(others, id: \.self) { other in
+                                    pingButton(other)
+                                }
+                            }
+                        }
                     }
-                    HStack(spacing: 10) {
-                        ForEach(others, id: \.self) { other in
-                            pingButton(other)
-                        }
-                        if let err = sendError {
-                            Text(err)
-                                .font(.caption2)
-                                .foregroundStyle(.red)
-                        }
+                    if let err = sendError {
+                        Text(err)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
                     }
                 }
             }
@@ -72,23 +110,43 @@ struct NudgeNotchView: View {
     }
 
     private var messageField: some View {
-        TextField("Add a message (optional)", text: $messageText)
-            .textFieldStyle(.plain)
-            .focused($messageFocused)
-            .font(.system(size: 12))
-            .foregroundStyle(.white)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.10))
-            )
+        ZStack {
+            TextField("Add a message (optional)", text: $draft.message)
+                .textFieldStyle(.plain)
+                .focused($messageFocused)
+                .onTapGesture { messageFocused = true }
+                .font(.system(size: 12))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .opacity(draft.isShowingSentConfirmation || draft.isAwaitingReceipt ? 0 : 1)
+                .disabled(draft.isShowingSentConfirmation || draft.isAwaitingReceipt)
+                .accessibilityHidden(draft.isShowingSentConfirmation || draft.isAwaitingReceipt)
+
+            if draft.isAwaitingReceipt {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Waiting for receipt")
+            }
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.green)
+                .symbolEffect(.bounce, value: draft.isShowingSentConfirmation)
+                .opacity(draft.isShowingSentConfirmation ? 1 : 0)
+                .accessibilityLabel("Nudge received")
+                .accessibilityHidden(!draft.isShowingSentConfirmation)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white.opacity(0.10))
+        )
     }
 
     private var gifButton: some View {
         Button {
-            GifPickerWindowController.shared.showWindow()
+            draft.openGIFPicker()
         } label: {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 13, weight: .semibold))
@@ -101,7 +159,8 @@ struct NudgeNotchView: View {
                 .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .help("Send a GIF")
+        .help("Choose a GIF")
+        .disabled(sending != nil || draft.isPickingGIF)
     }
 
     private func pingButton(_ recipient: String) -> some View {
@@ -123,7 +182,7 @@ struct NudgeNotchView: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .disabled(isSending)
+        .disabled(sending != nil || draft.isAwaitingReceipt || draft.isShowingSentConfirmation)
     }
 
     private func incomingView(for ping: NudgePing) -> some View {
@@ -171,24 +230,51 @@ struct NudgeNotchView: View {
     }
 
     private func tap(_ recipient: String) {
-        guard let me = identity.current else { return }
+        guard let me = identity.current,
+              !draft.isAwaitingReceipt, !draft.isShowingSentConfirmation else { return }
+        draft.isPickingGIF = false
         sending = recipient
         sendError = nil
         messageFocused = false
-        let outgoing = messageText
+        let outgoing = draft.message
+        let outgoingGif = draft.gif
+        let hasText = !outgoing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        draft.isAwaitingReceipt = hasText
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         Task {
             do {
-                try await transport.send(to: recipient, from: me, message: outgoing)
-                try? await Task.sleep(nanoseconds: 400_000_000)
+                let received = try await transport.send(to: recipient, from: me, message: outgoing, gif: outgoingGif?.sendURL.absoluteString, confirmDelivery: hasText)
+                let showConfirmation = hasText && received && self.vm.notchState == .open
+                if showConfirmation {
+                    await MainActor.run {
+                        self.draft.isShowingSentConfirmation = true
+                        self.draft.isAwaitingReceipt = false
+                        self.vm.open()
+                    }
+                }
+                if hasText && !received {
+                    await MainActor.run {
+                        self.draft.isAwaitingReceipt = false
+                        self.sending = nil
+                        self.sendError = "Sent — receipt not confirmed"
+                        if self.draft.message == outgoing { self.draft.message = "" }
+                        if self.draft.gif == outgoingGif { self.draft.gif = nil }
+                    }
+                    return
+                }
+                self.draft.isAwaitingReceipt = false
+                try? await Task.sleep(for: .milliseconds(showConfirmation ? 1400 : 400))
                 await MainActor.run {
+                    self.draft.isShowingSentConfirmation = false
                     self.sending = nil
-                    self.messageText = ""
+                    if self.draft.message == outgoing { self.draft.message = "" }
+                    if self.draft.gif == outgoingGif { self.draft.gif = nil }
                     self.vm.close()
                 }
             } catch {
                 await MainActor.run {
                     self.sending = nil
+                    self.draft.isAwaitingReceipt = false
                     self.sendError = "Send failed"
                 }
             }

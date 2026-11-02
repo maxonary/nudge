@@ -29,7 +29,7 @@ final class GifPickerWindowController: NSWindowController {
 
     private func setupWindow() {
         guard let window = window else { return }
-        window.title = "Send a GIF"
+        window.title = "Choose a GIF"
         window.isMovableByWindowBackground = true
         window.hidesOnDeactivate = false
         window.isRestorable = false

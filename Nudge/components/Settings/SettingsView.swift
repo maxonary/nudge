@@ -56,6 +56,7 @@ struct NudgeSettingsPane: View {
     @State private var nameDraft: String = NudgeIdentity.shared.current ?? ""
     @State private var nameError: String?
     @State private var showingPasswordSheet: Bool = false
+    @State private var passwordCopyFeedback: String?
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
     private var launchAtLoginBinding: Binding<Bool> {
@@ -106,8 +107,21 @@ struct NudgeSettingsPane: View {
                             .foregroundStyle(.red)
                     }
                 }
-                Button("Change password…") {
-                    showingPasswordSheet = true
+                HStack {
+                    Button("Change password…") {
+                        passwordCopyFeedback = nil
+                        showingPasswordSheet = true
+                    }
+                    Button(action: copyTeamPassword) {
+                        Label("Copy password", systemImage: "doc.on.doc")
+                    }
+                    .disabled(!teamSecret.hasPassword)
+                }
+                if let passwordCopyFeedback {
+                    Text(passwordCopyFeedback)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(passwordCopyFeedback)
                 }
             } header: {
                 Text("Team password")
@@ -263,6 +277,18 @@ struct NudgeSettingsPane: View {
         .onChange(of: identity.current) { _, newValue in
             nameDraft = newValue ?? ""
         }
+    }
+
+    private func copyTeamPassword() {
+        guard let password = teamSecret.currentPassword() else {
+            passwordCopyFeedback = "Couldn't read the password from Keychain. Try again."
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        passwordCopyFeedback = pasteboard.setString(password, forType: .string)
+            ? "Password copied."
+            : "Couldn't copy the password. Try again."
     }
 
     private func saveName() {

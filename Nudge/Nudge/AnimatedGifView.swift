@@ -37,33 +37,54 @@ struct AnimatedGifView: NSViewRepresentable {
         view.canDrawSubviewsIntoLayer = true
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         context.coordinator.loadedURL = url
-        load(into: view)
+        load(into: view, coordinator: context.coordinator)
         return view
+    }
+
+    // Respect SwiftUI's cell size instead of the downloaded image's intrinsic size.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSImageView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions(by: CGSize(width: 110, height: 90))
     }
 
     func updateNSView(_ nsView: NSImageView, context: Context) {
         // Only reload if the URL changed (avoid restarting playback each pass).
         if context.coordinator.loadedURL != url {
             context.coordinator.loadedURL = url
-            load(into: nsView)
+            load(into: nsView, coordinator: context.coordinator)
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    @MainActor
     final class Coordinator {
         var loadedURL: URL?
+        var loadTask: Task<Void, Never>?
     }
 
-    private func load(into view: NSImageView) {
+    static func dismantleNSView(_ nsView: NSImageView, coordinator: Coordinator) {
+        coordinator.loadTask?.cancel()
+        coordinator.loadTask = nil
+        nsView.animates = false
+        nsView.image = nil
+    }
+
+    private func load(into view: NSImageView, coordinator: Coordinator) {
+        coordinator.loadTask?.cancel()
+        view.image = nil
         if let cached = GifDataCache.shared.data(for: url) {
             view.image = NSImage(data: cached)
             return
         }
         let url = self.url
-        Task { @MainActor in
+        coordinator.loadTask = Task { @MainActor [weak view, weak coordinator] in
             guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  !Task.isCancelled,
+                  coordinator?.loadedURL == url,
+                  let view,
                   let image = NSImage(data: data) else { return }
             GifDataCache.shared.insert(data, for: url)
             view.image = image

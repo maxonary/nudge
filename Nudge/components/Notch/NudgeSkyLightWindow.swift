@@ -9,6 +9,7 @@ import Cocoa
 import SkyLightWindow
 import Defaults
 import Combine
+import SwiftUI
 
 extension SkyLightOperator {
     func undelegateWindow(_ window: NSWindow) {
@@ -33,6 +34,9 @@ extension SkyLightOperator {
 
 class NudgeSkyLightWindow: NSPanel {
     private var isSkyLightEnabled: Bool = false
+    weak var notchViewModel: NudgeViewModel?
+    private var localDismissMonitor: Any?
+    private var outsideClickMonitor: Any?
     
     override init(
         contentRect: NSRect,
@@ -49,10 +53,14 @@ class NudgeSkyLightWindow: NSPanel {
         
         configureWindow()
         setupObservers()
+        setupDismissal()
     }
     
     private func configureWindow() {
         isFloatingPanel = true
+        // SwiftUI's hosting view doesn't request key status through
+        // needsPanelToBecomeKey, so take focus on click, never on hover.
+        becomesKeyOnlyIfNeeded = false
         isOpaque = false
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
@@ -85,6 +93,51 @@ class NudgeSkyLightWindow: NSPanel {
             .store(in: &observers)
     }
     
+    private func setupDismissal() {
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+            self?.dismissIfOutside()
+        }
+        localDismissMonitor = NSEvent.addLocalMonitorForEvents(matching: [clicks, .keyDown]) { [weak self] event in
+            guard let self, self.notchViewModel?.notchState == .open else { return event }
+            if event.type == .keyDown {
+                // Handle Escape before text fields or the picker consume it.
+                if event.keyCode == 53, event.window === self || self.isKeyWindow {
+                    self.dismissNotch()
+                    return nil
+                }
+            } else {
+                self.dismissIfOutside()
+            }
+            return event
+        }
+    }
+
+    private func dismissIfOutside() {
+        guard let vm = notchViewModel, vm.notchState == .open else { return }
+        // The backing panel includes transparent space reserved for expansion.
+        // Hit-test against the visible notch, not the whole panel frame.
+        let visibleRect = NSRect(
+            x: frame.midX - vm.notchSize.width / 2,
+            y: frame.maxY - vm.notchSize.height,
+            width: vm.notchSize.width,
+            height: vm.notchSize.height
+        )
+        if !visibleRect.contains(NSEvent.mouseLocation) { dismissNotch() }
+    }
+
+    private func dismissNotch() {
+        guard let vm = notchViewModel else { return }
+        withAnimation(.smooth(duration: 0.2)) { vm.dismiss() }
+        makeFirstResponder(nil)
+        if isKeyWindow { resignKey() }
+    }
+
+    deinit {
+        if let localDismissMonitor { NSEvent.removeMonitor(localDismissMonitor) }
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+    }
+
     private func updateSharingType() {
         if Defaults[.hideFromScreenRecording] {
             sharingType = .none
@@ -109,6 +162,6 @@ class NudgeSkyLightWindow: NSPanel {
     
     private var observers: Set<AnyCancellable> = []
     
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

@@ -13,6 +13,7 @@
 //
 
 import Foundation
+import Combine
 import Defaults
 import os
 
@@ -24,6 +25,33 @@ struct NudgeGif: Identifiable, Equatable {
     /// URL actually sent to teammates (kept small — it renders in the notch).
     let sendURL: URL
     let description: String
+}
+
+/// Shared so a draft survives closing the notch or opening the GIF picker.
+@MainActor
+final class NudgeDraft: ObservableObject {
+    static let shared = NudgeDraft()
+
+    @Published var message = ""
+    @Published var gif: NudgeGif?
+    @Published var isShowingSentConfirmation = false
+    @Published var isAwaitingReceipt = false
+    @Published var isPickingGIF = false
+    @Published private(set) var previewRequest = UUID()
+
+    func openGIFPicker() {
+        guard !isAwaitingReceipt, !isShowingSentConfirmation else { return }
+        isPickingGIF = true
+        previewRequest = UUID()
+    }
+
+    func attach(_ gif: NudgeGif) {
+        isPickingGIF = false
+        self.gif = gif
+        previewRequest = UUID()
+    }
+
+    private init() {}
 }
 
 enum NudgeGifError: LocalizedError {

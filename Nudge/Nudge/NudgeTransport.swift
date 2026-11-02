@@ -4,10 +4,11 @@
 //
 //  Single shared ntfy topic for the whole team (derived from password).
 //  Every member subscribes; every message is encrypted with the team key.
-//  Two message types travel on this topic:
+//  Message types travel on this topic:
 //
 //    - "hello": "I'm <name>, I'm online" — broadcasts your existence so
 //      teammates can populate their roster without prior coordination.
+//    - "receipt": confirms a specific ping reached the recipient app.
 //    - "ping" : "<sender> nudges <to>" — the actual wave. Receivers ignore
 //      pings whose `to` doesn't match their own identity.
 //
@@ -24,22 +25,27 @@ struct NudgePing: Equatable {
     let receivedAt: Date
 }
 
-/// Wire payload (v2). Carried inside the AES-GCM-encrypted body.
+/// Wire payload (v2), with optional receipt correlation for older-build compatibility.
 private struct NudgePayload: Codable {
     let v: Int
-    let type: String            // "ping" | "hello"
+    let type: String            // "ping" | "hello" | "receipt"
     let sender: String
     let to: String?             // present only on type=="ping"
     let sends: Int              // sender's all-time send total (for the leaderboard)
     let msg: String?            // optional free-text message (ping only); omitted when nil
     let gif: String?            // optional GIF URL (ping only); omitted when nil
+    let id: UUID?              // optional for compatibility with older builds
 
-    static func ping(from sender: String, to recipient: String, sends: Int, msg: String?, gif: String?) -> NudgePayload {
-        NudgePayload(v: 2, type: "ping", sender: sender, to: recipient, sends: sends, msg: msg, gif: gif)
+    static func ping(from sender: String, to recipient: String, sends: Int, msg: String?, gif: String?, id: UUID?) -> NudgePayload {
+        NudgePayload(v: 2, type: "ping", sender: sender, to: recipient, sends: sends, msg: msg, gif: gif, id: id)
+    }
+
+    static func receipt(id: UUID, from recipient: String, to sender: String) -> NudgePayload {
+        NudgePayload(v: 2, type: "receipt", sender: recipient, to: sender, sends: 0, msg: nil, gif: nil, id: id)
     }
 
     static func hello(from sender: String, sends: Int) -> NudgePayload {
-        NudgePayload(v: 2, type: "hello", sender: sender, to: nil, sends: sends, msg: nil, gif: nil)
+        NudgePayload(v: 2, type: "hello", sender: sender, to: nil, sends: sends, msg: nil, gif: nil, id: nil)
     }
 }
 
@@ -53,6 +59,7 @@ final class NudgeTransport: ObservableObject {
     private var receiveTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     private var currentUser: String?
+    private let receipts = NudgeDeliveryReceipts()
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "com.ontora.nudge.path")
     private var lastPathStatus: NWPath.Status = .requiresConnection
@@ -66,11 +73,16 @@ final class NudgeTransport: ObservableObject {
 
     // MARK: - Public
 
-    func send(to recipient: String, from sender: String, message: String? = nil, gif: String? = nil) async throws {
+    @discardableResult
+    func send(to recipient: String, from sender: String, message: String? = nil, gif: String? = nil, confirmDelivery: Bool = false) async throws -> Bool {
         guard let topic = NudgeTeamSecret.shared.teamTopic else {
             log.error("send aborted: no team password set")
             throw URLError(.userAuthenticationRequired)
         }
+
+        let id = UUID()
+        if confirmDelivery { receipts.register(id: id, sender: sender, recipient: recipient) }
+        defer { receipts.cancel(id: id) }
 
         // Increment first so the count we broadcast already includes this ping.
         NudgeStats.shared.recordSent(to: recipient)
@@ -81,9 +93,11 @@ final class NudgeTransport: ObservableObject {
             to: recipient,
             sends: NudgeStats.shared.mySendsTotal,
             msg: (trimmed?.isEmpty == false) ? trimmed : nil,
-            gif: (gifTrimmed?.isEmpty == false) ? gifTrimmed : nil
+            gif: (gifTrimmed?.isEmpty == false) ? gifTrimmed : nil,
+            id: confirmDelivery ? id : nil
         )
         try await post(payload: payload, to: topic, label: "ping->\(recipient)")
+        return confirmDelivery ? await receipts.wait(id: id) : false
     }
 
     func startReceiving(as user: String) {
@@ -107,6 +121,7 @@ final class NudgeTransport: ObservableObject {
     }
 
     func stopReceiving() {
+        receipts.cancelAll()
         receiveTask?.cancel()
         receiveTask = nil
         heartbeatTask?.cancel()
@@ -176,6 +191,9 @@ final class NudgeTransport: ObservableObject {
                     totalSends: payload.sends
                 )
             }
+        case "receipt":
+            guard payload.to == myUser, let id = payload.id else { return }
+            receipts.accept(id: id, from: payload.sender, to: myUser)
         case "ping":
             // Ignore pings addressed to other people. Also ignore your
             // own loopback (you'd see your own broadcast otherwise).
@@ -188,6 +206,15 @@ final class NudgeTransport: ObservableObject {
                 totalSends: payload.sends
             )
             self.lastIncoming = NudgePing(sender: payload.sender, message: payload.msg, gif: payload.gif, receivedAt: Date())
+            // Acknowledge only after decryption, recipient matching, and local handling.
+            if let id = payload.id, let topic = NudgeTeamSecret.shared.teamTopic {
+                let receipt = NudgePayload.receipt(id: id, from: myUser, to: payload.sender)
+                do {
+                    try await post(payload: receipt, to: topic, label: "receipt")
+                } catch {
+                    log.error("receipt send failed: \(error.localizedDescription)")
+                }
+            }
         default:
             log.info("ignoring unknown payload type: \(payload.type)")
         }
@@ -258,5 +285,59 @@ final class NudgeTransport: ObservableObject {
             }
         }
         pathMonitor.start(queue: pathMonitorQueue)
+    }
+}
+
+/// Tracks matching recipient acknowledgments, including receipts arriving before POST returns.
+@MainActor
+final class NudgeDeliveryReceipts {
+    private struct Pending {
+        let sender: String
+        let recipient: String
+        var received = false
+        var continuation: CheckedContinuation<Bool, Never>?
+        var timeout: Task<Void, Never>?
+    }
+    private var pending: [UUID: Pending] = [:]
+
+    func register(id: UUID, sender: String, recipient: String) {
+        pending[id] = Pending(sender: sender, recipient: recipient)
+    }
+
+    func accept(id: UUID, from recipient: String, to sender: String) {
+        guard let entry = pending[id], entry.recipient == recipient, entry.sender == sender else { return }
+        if entry.continuation != nil {
+            finish(id: id, received: true)
+        } else {
+            pending[id]?.received = true
+        }
+    }
+
+    func wait(id: UUID, timeout: Duration = .seconds(8)) async -> Bool {
+        guard !Task.isCancelled, let entry = pending[id] else { return false }
+        if entry.received { return true }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                pending[id]?.continuation = continuation
+                pending[id]?.timeout = Task { [weak self] in
+                    do { try await Task.sleep(for: timeout) } catch { return }
+                    self?.finish(id: id, received: false)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancel(id: id) }
+        }
+    }
+
+    func cancel(id: UUID) { finish(id: id, received: false) }
+
+    func cancelAll() {
+        for id in Array(pending.keys) { cancel(id: id) }
+    }
+
+    private func finish(id: UUID, received: Bool) {
+        guard let entry = pending.removeValue(forKey: id) else { return }
+        entry.timeout?.cancel()
+        entry.continuation?.resume(returning: received)
     }
 }
