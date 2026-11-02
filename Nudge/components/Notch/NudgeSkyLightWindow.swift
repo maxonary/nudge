@@ -53,6 +53,9 @@ class NudgeSkyLightWindow: NSPanel {
     
     private func configureWindow() {
         isFloatingPanel = true
+        // SwiftUI's hosting view doesn't request key status through
+        // needsPanelToBecomeKey, so take focus on click, never on hover.
+        becomesKeyOnlyIfNeeded = false
         isOpaque = false
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
@@ -109,6 +112,6 @@ class NudgeSkyLightWindow: NSPanel {
     
     private var observers: Set<AnyCancellable> = []
     
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

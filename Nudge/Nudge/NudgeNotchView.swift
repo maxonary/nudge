@@ -76,6 +76,7 @@ struct NudgeNotchView: View {
             TextField("Add a message (optional)", text: $draft.message)
                 .textFieldStyle(.plain)
                 .focused($messageFocused)
+                .onTapGesture { messageFocused = true }
                 .font(.system(size: 12))
                 .foregroundStyle(.white)
                 .lineLimit(1)
