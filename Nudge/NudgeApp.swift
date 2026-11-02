@@ -153,6 +153,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let rect = NSRect(x: 0, y: 0, width: windowSize.width, height: windowSize.height)
         let styleMask: NSWindow.StyleMask = [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]
         let window = NudgeSkyLightWindow(contentRect: rect, styleMask: styleMask, backing: .buffered, defer: false)
+        window.notchViewModel = viewModel
         window.contentView = NSHostingView(
             rootView: ContentView()
                 .environmentObject(viewModel)
