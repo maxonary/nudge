@@ -23,11 +23,20 @@ struct NudgeNotchView: View {
     }
 
     var body: some View {
-        Group {
-            if let ping = transport.lastIncoming, isRecent(ping), !draft.isShowingSentConfirmation, !draft.isAwaitingReceipt {
-                incomingView(for: ping)
-            } else {
-                sendView
+        VStack(spacing: 8) {
+            Group {
+                if let ping = transport.lastIncoming, isRecent(ping), !draft.isShowingSentConfirmation, !draft.isAwaitingReceipt, !draft.isPickingGIF {
+                    incomingView(for: ping)
+                } else {
+                    sendView
+                }
+            }
+            if draft.isPickingGIF {
+                NudgeGifPickerView {
+                    draft.isPickingGIF = false
+                }
+                .frame(height: gifPickerExtraHeight - 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 12)
@@ -52,19 +61,48 @@ struct NudgeNotchView: View {
                     .foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        messageField
-                        gifButton
+                    Grid(verticalSpacing: 8) {
+                        if let gif = draft.gif {
+                            GridRow {
+                                AnimatedGifView(url: gif.sendURL)
+                                    .frame(height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(alignment: .topTrailing) {
+                                        Button {
+                                            draft.gif = nil
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .symbolRenderingMode(.palette)
+                                                .foregroundStyle(.white, .black.opacity(0.7))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(4)
+                                        .help("Remove GIF")
+                                        .accessibilityLabel("Remove GIF")
+                                    }
+                                    .accessibilityLabel("GIF preview: \(gif.description)")
+                                    .gridCellUnsizedAxes(.horizontal)
+                            }
+                        }
+                        GridRow {
+                            HStack(spacing: 8) {
+                                messageField
+                                gifButton
+                            }
+                            .gridCellUnsizedAxes(.horizontal)
+                        }
+                        GridRow {
+                            HStack(spacing: 10) {
+                                ForEach(others, id: \.self) { other in
+                                    pingButton(other)
+                                }
+                            }
+                        }
                     }
-                    HStack(spacing: 10) {
-                        ForEach(others, id: \.self) { other in
-                            pingButton(other)
-                        }
-                        if let err = sendError {
-                            Text(err)
-                                .font(.caption2)
-                                .foregroundStyle(.red)
-                        }
+                    if let err = sendError {
+                        Text(err)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
                     }
                 }
             }
@@ -108,7 +146,7 @@ struct NudgeNotchView: View {
 
     private var gifButton: some View {
         Button {
-            GifPickerWindowController.shared.showWindow()
+            draft.openGIFPicker()
         } label: {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 13, weight: .semibold))
@@ -121,7 +159,8 @@ struct NudgeNotchView: View {
                 .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .help("Send a GIF")
+        .help("Choose a GIF")
+        .disabled(sending != nil || draft.isPickingGIF)
     }
 
     private func pingButton(_ recipient: String) -> some View {
@@ -143,7 +182,7 @@ struct NudgeNotchView: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .disabled(sending != nil || draft.isAwaitingReceipt || draft.isShowingSentConfirmation)
+        .disabled(sending != nil)
     }
 
     private func incomingView(for ping: NudgePing) -> some View {

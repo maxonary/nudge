@@ -13,6 +13,7 @@ struct ContentView: View {
     @EnvironmentObject var vm: NudgeViewModel
     @ObservedObject var coordinator = NudgeViewCoordinator.shared
     @ObservedObject var transport = NudgeTransport.shared
+    @ObservedObject var draft = NudgeDraft.shared
 
     @State private var hoverTask: Task<Void, Never>?
     @State private var autoCloseTask: Task<Void, Never>?
@@ -84,10 +85,11 @@ struct ContentView: View {
                     .onTapGesture {
                         doOpen()
                     }
-                    .conditionalModifier(Defaults[.closeGestureEnabled] && Defaults[.enableGestures]) { view in
-                        view.panGesture(direction: .up) { translation, phase in
-                            handleUpGesture(translation: translation, phase: phase)
-                        }
+                    .panGesture(
+                        direction: .up,
+                        isEnabled: Defaults[.closeGestureEnabled] && Defaults[.enableGestures] && !draft.isPickingGIF
+                    ) { translation, phase in
+                        handleUpGesture(translation: translation, phase: phase)
                     }
                     .sensoryFeedback(.alignment, trigger: haptics)
                     .contextMenu {
@@ -107,6 +109,21 @@ struct ContentView: View {
         .animation(.smooth, value: gestureProgress)
         .preferredColorScheme(.dark)
         .environmentObject(vm)
+        .onChange(of: draft.previewRequest) { _, _ in
+            autoCloseTask?.cancel()
+            hoverTask?.cancel()
+            transport.lastIncoming = nil
+            doOpen()
+        }
+        .onChange(of: draft.isPickingGIF) { _, _ in
+            gestureProgress = .zero
+            withAnimation(animationSpring) {
+                if vm.notchState == .open { vm.open() }
+            }
+        }
+        .onChange(of: draft.gif) { _, _ in
+            if vm.notchState == .open { vm.open() }
+        }
         .onChange(of: transport.lastIncoming) { _, ping in
             handleIncoming(ping)
         }
@@ -147,6 +164,14 @@ struct ContentView: View {
         if coordinator.firstLaunch { return }
         hoverTask?.cancel()
 
+        // These states stay open on pointer exit; avoid scheduling a close or
+        // animating the entire GIF grid for a hover change that cannot close it.
+        if vm.notchState == .open,
+           draft.isPickingGIF || draft.gif != nil || draft.isAwaitingReceipt || draft.isShowingSentConfirmation {
+            isHovering = hovering
+            return
+        }
+
         if hovering {
             withAnimation(animationSpring) { isHovering = true }
             if vm.notchState == .closed && Defaults[.enableHaptics] { haptics.toggle() }
@@ -167,6 +192,9 @@ struct ContentView: View {
                 await MainActor.run {
                     withAnimation(animationSpring) { self.isHovering = false }
                     if self.vm.notchState == .open {
+                        // The picker shrinks away from the pointer after attaching.
+                        // Keep the GIF draft visible so the user can choose a recipient.
+                        guard self.draft.gif == nil else { return }
                         // Don't auto-close while showing an incoming ping
                         if let ping = self.transport.lastIncoming,
                            Date().timeIntervalSince(ping.receivedAt) < 6 {
@@ -180,6 +208,11 @@ struct ContentView: View {
     }
 
     private func handleUpGesture(translation: CGFloat, phase: NSEvent.Phase) {
+        // Scrolling the embedded browser must never scale or swipe the notch.
+        guard !draft.isPickingGIF else {
+            gestureProgress = .zero
+            return
+        }
         guard vm.notchState == .open else { return }
 
         withAnimation(animationSpring) {
@@ -211,7 +244,7 @@ struct ContentView: View {
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                if !self.isHovering {
+                if !self.isHovering, self.draft.gif == nil {
                     self.vm.close()
                 }
             }

@@ -102,12 +102,19 @@ class NudgeViewModel: NSObject, ObservableObject {
     }
 
     func open() {
-        self.notchSize = openNotchSize
+        self.notchSize = CGSize(
+            width: openNotchSize.width,
+            height: openNotchSize.height
+                + (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
+                + (NudgeDraft.shared.isPickingGIF ? gifPickerExtraHeight : 0)
+        )
         self.notchState = .open
     }
 
     func close() {
-        guard !NudgeDraft.shared.isShowingSentConfirmation, !NudgeDraft.shared.isAwaitingReceipt else { return }
+        // Let the successful text-send animation finish before collapsing,
+        // including when the pointer leaves or a shortcut requests closing.
+        guard !NudgeDraft.shared.isShowingSentConfirmation, !NudgeDraft.shared.isAwaitingReceipt, !NudgeDraft.shared.isPickingGIF else { return }
         self.notchSize = getClosedNotchSize(screenUUID: self.screenUUID)
         self.closedNotchSize = self.notchSize
         self.notchState = .closed

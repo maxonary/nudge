@@ -40,9 +40,9 @@ struct DynamicNotchApp: App {
             Text("Nudges sent: \(stats.mySendsTotal)")
             Text("Nudges received: \(stats.myReceivedTotal)")
             Divider()
-            Button("Send a GIF…") {
+            Button("Choose a GIF…") {
                 DispatchQueue.main.async {
-                    GifPickerWindowController.shared.showWindow()
+                    NudgeDraft.shared.openGIFPicker()
                 }
             }
             Button("Open onboarding…") {
