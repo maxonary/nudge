@@ -182,7 +182,7 @@ struct NudgeNotchView: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .disabled(sending != nil)
+        .disabled(sending != nil || draft.isAwaitingReceipt || draft.isShowingSentConfirmation)
     }
 
     private func incomingView(for ping: NudgePing) -> some View {
@@ -230,7 +230,8 @@ struct NudgeNotchView: View {
     }
 
     private func tap(_ recipient: String) {
-        guard let me = identity.current else { return }
+        guard let me = identity.current,
+              !draft.isAwaitingReceipt, !draft.isShowingSentConfirmation else { return }
         draft.isPickingGIF = false
         sending = recipient
         sendError = nil
