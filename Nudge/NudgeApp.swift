@@ -20,6 +20,7 @@ struct DynamicNotchApp: App {
     @ObservedObject var identity = NudgeIdentity.shared
     @ObservedObject var teamSecret = NudgeTeamSecret.shared
     @ObservedObject var stats = NudgeStats.shared
+    @ObservedObject var updateChecker = NudgeUpdateChecker.shared
     @Environment(\.openWindow) var openWindow
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
@@ -66,6 +67,10 @@ struct DynamicNotchApp: App {
                 }
             }
             .keyboardShortcut(KeyEquivalent(","), modifiers: .command)
+            Button(updateChecker.isChecking ? "Checking for Updates…" : "Check for Updates…") {
+                Task { await updateChecker.checkForUpdates() }
+            }
+            .disabled(updateChecker.isChecking)
             Button("Quit", role: .destructive) {
                 NSApplication.shared.terminate(self)
             }
