@@ -107,6 +107,7 @@ class NudgeViewModel: NSObject, ObservableObject {
     }
 
     func close() {
+        guard !NudgeDraft.shared.isShowingSentConfirmation, !NudgeDraft.shared.isAwaitingReceipt else { return }
         self.notchSize = getClosedNotchSize(screenUUID: self.screenUUID)
         self.closedNotchSize = self.notchSize
         self.notchState = .closed
