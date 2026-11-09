@@ -90,13 +90,9 @@ struct AgentAttentionView: View {
 
     // MARK: - Approval
 
-    /// The monospaced box that shows what an approval will run or touch.
-    private func monospacedBox(_ text: String, lineLimit: Int) -> some View {
-        Text(text)
-            .font(.system(size: 12, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.86))
-            .lineLimit(lineLimit)
-            .textSelection(.enabled)
+    /// The rounded box that shows what an approval will run or touch.
+    private func detailBox<Content: View>(_ content: Content) -> some View {
+        content
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,6 +100,33 @@ struct AgentAttentionView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.white.opacity(0.07))
             )
+    }
+
+    private func monospacedText(_ text: String, lineLimit: Int) -> some View {
+        Text(text)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.86))
+            .lineLimit(lineLimit)
+    }
+
+    private func commandBox(_ command: String) -> some View {
+        detailBox(monospacedText(command, lineLimit: 3).textSelection(.enabled))
+    }
+
+    /// One text per summary line, so a long value shortens in its middle
+    /// instead of pushing the following arguments out of the box.
+    private func summaryBox(_ summary: String) -> some View {
+        let lines = summary.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        return detailBox(
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    monospacedText(line, lineLimit: 2)
+                        .truncationMode(.middle)
+                }
+            }
+            .textSelection(.enabled)
+        )
+        .accessibilityElement(children: .ignore)
     }
 
     private func approvalView(_ approval: AgentApproval) -> some View {
@@ -128,10 +151,10 @@ struct AgentAttentionView: View {
             }
 
             if let command = approval.command, !command.isEmpty {
-                monospacedBox(command, lineLimit: 3)
+                commandBox(command)
                     .accessibilityLabel("Befehl: \(command)")
             } else if let summary = approval.inputSummary, !summary.isEmpty {
-                monospacedBox(summary, lineLimit: 6)
+                summaryBox(summary)
                     .accessibilityLabel("Details: \(summary)")
             }
 
@@ -451,8 +474,9 @@ struct AgentAttentionView: View {
             if approval.command?.isEmpty == false {
                 details = 38 + gap
             } else if let summary = approval.inputSummary, !summary.isEmpty {
-                let lines = min(6, summary.split(separator: "\n", omittingEmptySubsequences: false).count)
-                details = 23 + CGFloat(lines) * 15 + gap
+                // One 15pt line per summary line plus 2pt between; long values wrap to a second line.
+                let lines = summary.split(separator: "\n", omittingEmptySubsequences: false).count
+                details = 21 + CGFloat(lines) * 17 + gap
             } else {
                 details = 0
             }
