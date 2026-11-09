@@ -41,11 +41,14 @@ native UI. Connect Claude Code or Codex explicitly in Nudge Settings.
   Nudge keeps showing its notifications while Conductor is in front.
 - Agent payloads stay on-device over an owner-only Unix socket and are never
   uploaded. Human Nudge/ntfy pings remain a separate feature.
-- The open notch lists the last four agent requests and nudges, dimming the
-  ones already handled. So the list survives a restart, Nudge keeps it in
+- The open notch lists the last four agent requests and nudges. The newest
+  one stays large until you look at it; handled ones are dimmed. So the list
+  survives a restart, Nudge keeps it in
   `~/Library/Application Support/Nudge/activity-log.json` (owner-only): each
-  entry's title (including a question's text or a nudge's message), app, time,
-  and outcome. Commands, answers, and terminal session IDs are not stored.
+  entry's title, project, app, time, outcome, and a short summary (up to 240
+  characters of the agent's last message, a question's text, a request's
+  description, or a nudge's message). Commands, answers, and terminal session
+  IDs are not stored.
 - AI summaries and an inbox are intentionally deferred. Disconnect removes only
   Nudge-owned registrations; the inactive helper may remain on disk locally.
 

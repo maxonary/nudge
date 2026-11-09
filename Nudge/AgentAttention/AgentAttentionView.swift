@@ -371,60 +371,8 @@ struct AgentAttentionView: View {
 
     // MARK: - Shared pieces
 
-    private enum Badge {
-        case completion, approval, question
-
-        var symbol: String {
-            switch self {
-            case .completion: return "checkmark"
-            case .approval: return "hand.raised.fill"
-            case .question: return "questionmark"
-            }
-        }
-
-        var color: Color {
-            switch self {
-            case .completion: return Color(nsColor: .systemGreen)
-            case .approval: return Color(nsColor: .systemOrange)
-            case .question: return Color.effectiveAccent
-            }
-        }
-    }
-
-    private func hostIcon(badge: Badge) -> some View {
-        ZStack(alignment: .bottomTrailing) {
-            Group {
-                if let icon = AgentHostIcon.image(for: center.presentedEnvelope?.host) {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.white.opacity(0.14))
-                        .overlay(
-                            Image(systemName: "terminal.fill")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.85))
-                        )
-                        .padding(2)
-                }
-            }
-            .frame(width: 36, height: 36)
-
-            Circle()
-                .fill(badge.color)
-                .frame(width: 16, height: 16)
-                .overlay(
-                    Image(systemName: badge.symbol)
-                        .font(.system(size: 8, weight: .black))
-                        .foregroundStyle(.white)
-                )
-                .overlay(Circle().stroke(Color.black, lineWidth: 2))
-                .offset(x: 3, y: 3)
-        }
-        .frame(width: 36, height: 36)
-        .accessibilityHidden(true)
+    private func hostIcon(badge: AgentBadgedIcon.Badge) -> some View {
+        AgentBadgedIcon(host: center.presentedEnvelope?.host, badge: badge)
     }
 
     private func titleLine(_ title: String, trailing: String?) -> some View {
@@ -661,6 +609,71 @@ struct AgentAttentionView: View {
         textEntryActive = true
         focusController.beginTextEntry()
         center.beginEditing()
+    }
+}
+
+// MARK: - Badged app icon
+
+/// The originating app's icon with a small status badge, like a macOS
+/// notification. Shared by the agent panel and the activity log.
+struct AgentBadgedIcon: View {
+    enum Badge {
+        case completion, approval, question
+
+        var symbol: String {
+            switch self {
+            case .completion: return "checkmark"
+            case .approval: return "hand.raised.fill"
+            case .question: return "questionmark"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .completion: return Color(nsColor: .systemGreen)
+            case .approval: return Color(nsColor: .systemOrange)
+            case .question: return Color.effectiveAccent
+            }
+        }
+    }
+
+    let host: AgentHost?
+    let badge: Badge
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let icon = AgentHostIcon.image(for: host) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.14))
+                        .overlay(
+                            Image(systemName: "terminal.fill")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.85))
+                        )
+                        .padding(2)
+                }
+            }
+            .frame(width: 36, height: 36)
+
+            Circle()
+                .fill(badge.color)
+                .frame(width: 16, height: 16)
+                .overlay(
+                    Image(systemName: badge.symbol)
+                        .font(.system(size: 8, weight: .black))
+                        .foregroundStyle(.white)
+                )
+                .overlay(Circle().stroke(Color.black, lineWidth: 2))
+                .offset(x: 3, y: 3)
+        }
+        .frame(width: 36, height: 36)
+        .accessibilityHidden(true)
     }
 }
 

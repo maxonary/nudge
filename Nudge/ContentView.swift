@@ -138,7 +138,7 @@ struct ContentView: View {
         .onChange(of: agentAttention.hasVisibleAgentContent) { _, isVisible in
             handleAgentVisibility(isVisible)
         }
-        .onChange(of: activityLog.entries.count) { _, _ in
+        .onChange(of: ActivityLogView.height(for: activityLog.entries)) { _, _ in
             if vm.notchState == .open { doOpen() }
         }
         .onAppear {

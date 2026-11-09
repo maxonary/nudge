@@ -133,7 +133,7 @@ class NudgeViewModel: NSObject, ObservableObject {
             // The recent-activity log sits under the send view, except while picking a GIF.
             let logHeight = NudgeDraft.shared.isPickingGIF
                 ? 0
-                : ActivityLogView.height(forEntryCount: ActivityLogStore.shared.entries.count)
+                : ActivityLogView.height(for: ActivityLogStore.shared.entries)
             contentHeight = openNotchSize.height
                 + (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
                 + logHeight

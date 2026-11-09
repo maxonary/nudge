@@ -14,7 +14,7 @@ struct ActivityLogFileTests {
             id: id,
             kind: .approval,
             title: "Claude Code möchte Bash nutzen",
-            detail: "git push --force",
+            summary: "Änderungen pushen",
             source: .claudeCode,
             host: AgentHost(appName: "Conductor", bundleID: "com.conductor.app", terminalSessionID: "tty-7"),
             date: Date(timeIntervalSince1970: 1_800_000_000),
@@ -23,7 +23,7 @@ struct ActivityLogFileTests {
     }
 
     @Test
-    func savedLogLoadsBackWithoutCommandsOrTerminalSessions() throws {
+    func savedLogLoadsBackWithoutTerminalSessions() throws {
         let file = temporaryFile()
         var log = ActivityLog()
         log.record(entry("a", status: .handled("Erlaubt")))
@@ -37,11 +37,11 @@ struct ActivityLogFileTests {
         #expect(restored.status == .handled("Erlaubt"))
         #expect(restored.date == Date(timeIntervalSince1970: 1_800_000_000))
         #expect(restored.host?.bundleID == "com.conductor.app")
-        #expect(restored.detail == nil)
+        #expect(restored.summary == "Änderungen pushen")
         #expect(restored.host?.terminalSessionID == nil)
 
         let raw = try String(contentsOf: file, encoding: .utf8)
-        #expect(!raw.contains("git push"))
+        #expect(!raw.contains("tty-7"))
     }
 
     @Test

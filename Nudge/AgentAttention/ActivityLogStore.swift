@@ -36,41 +36,15 @@ final class ActivityLogStore: ObservableObject {
     // MARK: Agent events
 
     func recordCompletion(_ completion: AgentCompletion, envelope: AgentEventEnvelope, shown: Bool) {
-        log.record(ActivityLogEntry(
-            id: completion.id,
-            kind: .completion,
-            title: "\(Self.sourceName(envelope.source)) ist fertig",
-            detail: Self.condensed(completion.message),
-            source: envelope.source,
-            host: envelope.host,
-            date: Date(),
-            status: shown ? .unhandled : .handled("Gesehen")
-        ))
+        log.record(.completion(completion, envelope: envelope, date: Date(), shown: shown))
     }
 
     func recordQuestion(_ questionSet: AgentQuestionSet, envelope: AgentEventEnvelope, claimed: Bool) {
-        log.record(ActivityLogEntry(
-            id: questionSet.id,
-            kind: .question,
-            title: questionSet.questions.first?.prompt ?? "\(Self.sourceName(envelope.source)) hat eine Frage",
-            source: envelope.source,
-            host: envelope.host,
-            date: Date(),
-            status: claimed ? .pending : .handled("Im Agent")
-        ))
+        log.record(.question(questionSet, envelope: envelope, date: Date(), claimed: claimed))
     }
 
     func recordApproval(_ approval: AgentApproval, envelope: AgentEventEnvelope, claimed: Bool) {
-        log.record(ActivityLogEntry(
-            id: approval.id,
-            kind: .approval,
-            title: "\(Self.sourceName(envelope.source)) möchte \(approval.toolName) nutzen",
-            detail: approval.command ?? approval.detail,
-            source: envelope.source,
-            host: envelope.host,
-            date: Date(),
-            status: claimed ? .pending : .handled("Im Agent")
-        ))
+        log.record(.approval(approval, envelope: envelope, date: Date(), claimed: claimed))
     }
 
     func settle(id: String, outcome: String) {
@@ -84,39 +58,15 @@ final class ActivityLogStore: ObservableObject {
     // MARK: Nudges
 
     func recordNudge(_ ping: NudgePing) {
-        let title: String
-        if let message = Self.condensed(ping.message) {
-            title = "\(ping.sender): \(message)"
-        } else if ping.gif != nil {
-            title = "\(ping.sender) hat ein GIF geschickt"
-        } else {
-            title = "\(ping.sender) winkt dir"
-        }
+        let summary = ActivityLogEntry.plainSummary(ping.message)
         log.record(ActivityLogEntry(
             id: "nudge-\(ping.sender)-\(ping.receivedAt.timeIntervalSince1970)",
             kind: .nudge,
-            title: title,
+            title: ping.gif != nil && summary == nil ? "\(ping.sender) hat ein GIF geschickt" : "\(ping.sender) winkt dir",
+            summary: summary,
             sender: ping.sender,
             date: ping.receivedAt,
             status: .unhandled
         ))
-    }
-
-    // MARK: Helpers
-
-    private static func sourceName(_ source: AgentSource) -> String {
-        switch source {
-        case .claudeCode: return "Claude Code"
-        case .codex: return "Codex"
-        }
-    }
-
-    private static func condensed(_ text: String?) -> String? {
-        guard let text else { return nil }
-        let flattened = text
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        return flattened.isEmpty ? nil : flattened
     }
 }
