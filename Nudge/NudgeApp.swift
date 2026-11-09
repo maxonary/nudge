@@ -82,6 +82,7 @@ struct DynamicNotchApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windows: [String: NSWindow] = [:] // UUID -> NSWindow
     var viewModels: [String: NudgeViewModel] = [:] // UUID -> NudgeViewModel
@@ -95,12 +96,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenUnlockedObserver: Any?
     private var windowScreenDidChangeObserver: Any?
     private var identityCancellable: AnyCancellable?
+    private let agentBridgeServer = AgentBridgeServer()
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        agentBridgeServer.stop()
         NotificationCenter.default.removeObserver(self)
         if let observer = screenLockedObserver {
             DistributedNotificationCenter.default().removeObserver(observer)
@@ -154,8 +157,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let styleMask: NSWindow.StyleMask = [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]
         let window = NudgeSkyLightWindow(contentRect: rect, styleMask: styleMask, backing: .buffered, defer: false)
         window.notchViewModel = viewModel
+        let agentFocusController = AgentPanelFocusController()
+        agentFocusController.attach(window: window)
         window.contentView = NSHostingView(
-            rootView: ContentView()
+            rootView: ContentView(agentFocusController: agentFocusController)
                 .environmentObject(viewModel)
         )
         window.orderFrontRegardless()
@@ -293,6 +298,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             adjustWindowPosition(changeAlpha: true)
         }
+
+        agentBridgeServer.start(
+            onEvent: { envelope, session in
+                AgentAttentionCenter.shared.receive(envelope, session: session)
+            },
+            onDisconnect: { envelope, session in
+                AgentAttentionCenter.shared.disconnect(envelope: envelope, session: session)
+            }
+        )
 
         // Start Nudge transport only when BOTH identity and team password
         // are present; stop whenever either is missing.

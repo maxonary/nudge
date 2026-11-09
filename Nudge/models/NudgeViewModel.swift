@@ -102,10 +102,14 @@ class NudgeViewModel: NSObject, ObservableObject {
     }
 
     func open() {
+        // Agent content replaces the send view, including its GIF draft row.
+        let contentExtraHeight: CGFloat = AgentAttentionCenter.shared.hasVisibleAgentContent
+            ? agentAttentionExtraHeight
+            : (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
         self.notchSize = CGSize(
             width: openNotchSize.width,
             height: openNotchSize.height
-                + (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
+                + contentExtraHeight
                 + (NudgeDraft.shared.isPickingGIF ? gifPickerExtraHeight : 0)
         )
         self.notchState = .open

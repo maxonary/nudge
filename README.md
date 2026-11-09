@@ -21,6 +21,30 @@ For text nudges, a spinner waits for a delivery receipt. The animated checkmark 
 
 Press **Escape** while interacting with the notch, or click outside it, to close it. Unsent text and attached GIFs remain available when you reopen it.
 
+## Agent Attention (V0)
+
+Nudge can surface coding-agent work in the notch without replacing the agent's
+native UI. Connect Claude Code or Codex explicitly in Nudge Settings.
+
+- Claude Code supports turn-completion notifications, multi-step questions
+  with single, multiple, or freeform answers, and permission decisions for
+  once or deny. Session-wide approval appears when Claude supplies a compatible
+  permission suggestion.
+- Codex supports turn-completion notifications and once/deny permission
+  decisions. Arbitrary Codex questions remain in Codex's native UI.
+- After connecting Codex, verify and trust the Nudge hook once with `/hooks`.
+  Already-running Claude Code sessions need `/reload-plugins` or a restart.
+- Busy or unanswered requests fail open to the agent; Nudge keeps no queue.
+- Nudge reliably activates the originating host app, but exact terminal-tab
+  targeting depends on the host and is not guaranteed.
+- Conductor is recognized as a host. Because it runs many chats side by side,
+  Nudge keeps showing its notifications while Conductor is in front.
+- Agent payloads stay on-device over an owner-only Unix socket. They are not
+  persisted or uploaded. Human Nudge/ntfy pings remain a separate feature.
+- AI summaries, history, and an inbox are intentionally deferred. Disconnect
+  removes only Nudge-owned registrations; the inactive helper may remain on
+  disk locally.
+
 ## Settings and updates
 
 The hand-wave menu includes Settings, sound and notification toggles, launch at login, **Check for Updates**, and Quit. Settings also contains your identity, team password, known teammates, all-time statistics, and an optional GIF API key override.
