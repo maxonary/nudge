@@ -22,6 +22,7 @@ final class AgentAttentionCenter: ObservableObject {
     private var activationObserver: NSObjectProtocol?
     private var lastHandledQuestionKey: HandledQuestionKey?
     private let workspace: NSWorkspace
+    private let activityLog = ActivityLogStore.shared
 
     init(workspace: NSWorkspace = .shared) {
         self.workspace = workspace
@@ -75,22 +76,29 @@ final class AgentAttentionCenter: ObservableObject {
             }
             guard state.claim(.question(questionSet)) else {
                 rememberHandledQuestion(key)
+                activityLog.recordQuestion(questionSet, envelope: envelope, claimed: false)
                 session.handoff()
                 return
             }
+            activityLog.recordQuestion(questionSet, envelope: envelope, claimed: true)
             claim(envelope, session: session)
 
         case let .approval(approval):
             guard state.claim(.approval(approval)) else {
+                activityLog.recordApproval(approval, envelope: envelope, claimed: false)
                 session.handoff()
                 return
             }
+            activityLog.recordApproval(approval, envelope: envelope, claimed: true)
             claim(envelope, session: session)
         }
     }
 
     func disconnect(envelope: AgentEventEnvelope, session: AgentBridgeSession) {
         guard activeEnvelope == envelope, activeSession === session else { return }
+        if let id = envelope.event.requestID {
+            activityLog.settle(id: id, outcome: "Im Agent")
+        }
         clearActiveRequest(id: envelope.event.requestID)
     }
 
@@ -139,6 +147,7 @@ final class AgentAttentionCenter: ObservableObject {
         activeEnvelope = nil
         cancelCollapse()
         state.clearRequest(id: questionSet.id)
+        activityLog.settle(id: questionSet.id, outcome: "Beantwortet")
         session.respond(.answered(answers: answers))
     }
 
@@ -153,6 +162,7 @@ final class AgentAttentionCenter: ObservableObject {
         activeEnvelope = nil
         cancelCollapse()
         state.clearRequest(id: approval.id)
+        activityLog.settle(id: approval.id, outcome: Self.outcome(of: response))
         session.respond(response)
     }
 
@@ -166,15 +176,38 @@ final class AgentAttentionCenter: ObservableObject {
             activeEnvelope = nil
             cancelCollapse()
             state.clearRequest(id: request.id)
+            activityLog.settle(id: request.id, outcome: "Im Agent")
             session?.handoff()
         } else if let completion = state.completion {
             completionEnvelope = nil
             cancelCollapse()
             state.dismissCompletion(id: completion.id)
+            activityLog.settle(id: completion.id, outcome: "Geöffnet")
         }
 
         if let host = envelope?.host {
             activate(host: host)
+        }
+    }
+
+    /// Opens the app a logged agent entry came from.
+    func jump(to host: AgentHost) {
+        activate(host: host)
+    }
+
+    /// Shows the live request again, e.g. after it collapsed unanswered.
+    func revealActiveRequest() {
+        guard state.activeRequest != nil else { return }
+        state.visible = true
+        scheduleCollapseAfterThreeSeconds()
+    }
+
+    private static func outcome(of response: AgentBridgeResponse) -> String {
+        switch response {
+        case .approvedOnce: return "Erlaubt"
+        case .approvedForSession: return "Für Session erlaubt"
+        case .denied: return "Abgelehnt"
+        case .answered: return "Beantwortet"
         }
     }
 
@@ -228,6 +261,7 @@ final class AgentAttentionCenter: ObservableObject {
 
         dismissPresentedCompletion()
         lastCompletionID = completion.id
+        activityLog.recordCompletion(completion, envelope: envelope, shown: true)
         completionEnvelope = envelope
         _ = state.receiveCompletion(completion)
         playCompletionSound()
@@ -253,10 +287,17 @@ final class AgentAttentionCenter: ObservableObject {
         lastCompletionID = completion.id
         playCompletionSound()
 
-        guard state.activeRequest == nil else { return }
+        guard state.activeRequest == nil else {
+            activityLog.recordCompletion(completion, envelope: envelope, shown: true)
+            return
+        }
         dismissPresentedCompletion()
-        guard !isOriginFrontmost(envelope.host) else { return }
+        guard !isOriginFrontmost(envelope.host) else {
+            activityLog.recordCompletion(completion, envelope: envelope, shown: false)
+            return
+        }
 
+        activityLog.recordCompletion(completion, envelope: envelope, shown: true)
         completionEnvelope = envelope
         _ = state.receiveCompletion(completion)
         scheduleCollapseAfterThreeSeconds()
@@ -361,6 +402,7 @@ final class AgentAttentionCenter: ObservableObject {
             activeEnvelope = nil
             cancelCollapse()
             state.clearRequest(id: request.id)
+            activityLog.settle(id: request.id, outcome: "Im Agent")
             session?.handoff()
         }
 
@@ -375,6 +417,7 @@ final class AgentAttentionCenter: ObservableObject {
             completionEnvelope = nil
             cancelCollapse()
             state.dismissCompletion(id: completion.id)
+            activityLog.settle(id: completion.id, outcome: "Gesehen")
         }
     }
 

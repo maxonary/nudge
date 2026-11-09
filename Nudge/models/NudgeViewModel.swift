@@ -130,7 +130,13 @@ class NudgeViewModel: NSObject, ObservableObject {
                 agentAttentionMaxHeight
             )
         } else {
-            contentHeight = openNotchSize.height + (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
+            // The recent-activity log sits under the send view, except while picking a GIF.
+            let logHeight = NudgeDraft.shared.isPickingGIF
+                ? 0
+                : ActivityLogView.height(forEntryCount: ActivityLogStore.shared.entries.count)
+            contentHeight = openNotchSize.height
+                + (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
+                + logHeight
         }
         self.notchSize = CGSize(
             width: openNotchSize.width,

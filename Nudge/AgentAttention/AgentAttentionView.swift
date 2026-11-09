@@ -667,7 +667,7 @@ struct AgentAttentionView: View {
 // MARK: - Host icons
 
 @MainActor
-private enum AgentHostIcon {
+enum AgentHostIcon {
     private static var cache: [String: NSImage] = [:]
 
     /// The originating app's own icon, the way macOS notifications show it.
@@ -733,7 +733,7 @@ private struct AgentCapsuleStyle: ButtonStyle {
 }
 
 /// Rows in the grouped choice list: hover tint and a quick press.
-private struct AgentRowStyle: ButtonStyle {
+struct AgentRowStyle: ButtonStyle {
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {

@@ -13,6 +13,7 @@ struct NudgeNotchView: View {
     @ObservedObject var draft = NudgeDraft.shared
     @ObservedObject var roster: NudgeRoster = .shared
     @ObservedObject var agentAttention: AgentAttentionCenter = .shared
+    @ObservedObject var activityLog: ActivityLogStore = .shared
     @EnvironmentObject var vm: NudgeViewModel
 
     let agentFocusController: AgentPanelFocusController
@@ -45,6 +46,10 @@ struct NudgeNotchView: View {
                 } else {
                     sendView
                 }
+            }
+            if !agentAttention.hasVisibleAgentContent, !draft.isPickingGIF, !activityLog.entries.isEmpty {
+                ActivityLogView(store: activityLog, center: agentAttention)
+                    .transition(.opacity)
             }
             if draft.isPickingGIF {
                 NudgeGifPickerView {

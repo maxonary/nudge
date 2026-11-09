@@ -15,6 +15,7 @@ struct ContentView: View {
     @ObservedObject var transport = NudgeTransport.shared
     @ObservedObject var draft = NudgeDraft.shared
     @ObservedObject var agentAttention = AgentAttentionCenter.shared
+    @ObservedObject var activityLog = ActivityLogStore.shared
 
     private let agentFocusController: AgentPanelFocusController
 
@@ -137,6 +138,9 @@ struct ContentView: View {
         .onChange(of: agentAttention.hasVisibleAgentContent) { _, isVisible in
             handleAgentVisibility(isVisible)
         }
+        .onChange(of: activityLog.entries.count) { _, _ in
+            if vm.notchState == .open { doOpen() }
+        }
         .onAppear {
             if agentAttention.hasVisibleAgentContent {
                 doOpen()
@@ -258,6 +262,7 @@ struct ContentView: View {
 
     private func handleIncoming(_ ping: NudgePing?) {
         guard let ping else { return }
+        activityLog.recordNudge(ping)
         autoCloseTask?.cancel()
         let backupText = ping.message ?? (ping.gif != nil ? "sent a GIF 🎬" : nil)
         NudgeNotifier.postBackup(sender: ping.sender, message: backupText)
