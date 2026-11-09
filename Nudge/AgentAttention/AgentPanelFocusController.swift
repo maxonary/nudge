@@ -33,16 +33,20 @@ final class AgentPanelFocusController {
         }
     }
 
-    func restorePreviousApplication() {
+    /// `willActivate` runs right before the previous app is brought forward, so
+    /// the caller can tell that activation apart from the user switching apps.
+    func restorePreviousApplication(willActivate: (NSRunningApplication) -> Void = { _ in }) {
         endTextEntry()
 
         let previous = previousApplication
         previousApplication = nil
 
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier
-                == NSRunningApplication.current.processIdentifier else {
+                == NSRunningApplication.current.processIdentifier,
+              let previous else {
             return
         }
-        previous?.activate(options: [.activateAllWindows])
+        willActivate(previous)
+        previous.activate(options: [.activateAllWindows])
     }
 }

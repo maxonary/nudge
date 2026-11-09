@@ -51,7 +51,7 @@ struct AgentAttentionView: View {
         .animation(stateAnimation, value: presentationID)
         .onDisappear {
             endTextEntry()
-            focusController.restorePreviousApplication()
+            restoreFocus()
         }
     }
 
@@ -240,7 +240,7 @@ struct AgentAttentionView: View {
                         Button("Antworten") {
                             endTextEntry()
                             center.submitQuestion()
-                            focusController.restorePreviousApplication()
+                            restoreFocus()
                         }
                         .buttonStyle(AgentCapsuleStyle(role: .primary, fill: false))
                         .disabled(center.state.answersForSubmission() == nil)
@@ -326,7 +326,7 @@ struct AgentAttentionView: View {
                     guard center.state.answersForSubmission() != nil else { return }
                     endTextEntry()
                     center.submitQuestion()
-                    focusController.restorePreviousApplication()
+                    restoreFocus()
                 } else if isDraftValid(question: questionSet.questions[index], at: index) {
                     endTextEntry()
                     center.moveQuestion(to: index + 1)
@@ -445,7 +445,7 @@ struct AgentAttentionView: View {
         Button {
             endTextEntry()
             // Clear any stored focus restoration before requesting the origin app.
-            focusController.restorePreviousApplication()
+            restoreFocus()
             center.jumpOrHandoff()
         } label: {
             jumpLabelContent
@@ -642,6 +642,10 @@ struct AgentAttentionView: View {
         freeformFocused = false
         center.endEditing()
         focusController.endTextEntry()
+    }
+
+    private func restoreFocus() {
+        focusController.restorePreviousApplication { center.willRestoreFocus(to: $0) }
     }
 
     private func startTextEntry() {

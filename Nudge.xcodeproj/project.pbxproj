@@ -49,6 +49,7 @@
 		AA1000000000000000000011 /* ActivityLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000011 /* ActivityLog.swift */; };
 		AA1000000000000000000012 /* ActivityLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000012 /* ActivityLogStore.swift */; };
 		AA1000000000000000000013 /* ActivityLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000013 /* ActivityLogView.swift */; };
+		AA1000000000000000000014 /* ExpectedActivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000014 /* ExpectedActivation.swift */; };
 		AA1000000000000000000009 /* nudge_agent_hook.py in Resources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000009 /* nudge_agent_hook.py */; };
 		AA1000000000000000000010 /* ConnectorLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000010 /* ConnectorLifecycle.swift */; };
 		AAA000000000000000000020 /* NudgeConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA000000000000000000010 /* NudgeConstants.swift */; };
@@ -133,6 +134,7 @@
 		AA2000000000000000000011 /* ActivityLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLog.swift; sourceTree = "<group>"; };
 		AA2000000000000000000012 /* ActivityLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLogStore.swift; sourceTree = "<group>"; };
 		AA2000000000000000000013 /* ActivityLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLogView.swift; sourceTree = "<group>"; };
+		AA2000000000000000000014 /* ExpectedActivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpectedActivation.swift; sourceTree = "<group>"; };
 		AA2000000000000000000009 /* nudge_agent_hook.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = nudge_agent_hook.py; sourceTree = "<group>"; };
 		AA2000000000000000000010 /* ConnectorLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectorLifecycle.swift; sourceTree = "<group>"; };
 		AAA000000000000000000010 /* NudgeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeConstants.swift; sourceTree = "<group>"; };
@@ -446,6 +448,7 @@
 				AA2000000000000000000003 /* ConnectorConfiguration.swift */,
 				AA2000000000000000000010 /* ConnectorLifecycle.swift */,
 				AA2000000000000000000011 /* ActivityLog.swift */,
+				AA2000000000000000000014 /* ExpectedActivation.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -652,6 +655,7 @@
 				AA1000000000000000000007 /* AgentAttentionView.swift in Sources */,
 				AA1000000000000000000008 /* AgentPanelFocusController.swift in Sources */,
 				AA1000000000000000000011 /* ActivityLog.swift in Sources */,
+				AA1000000000000000000014 /* ExpectedActivation.swift in Sources */,
 				AA1000000000000000000012 /* ActivityLogStore.swift in Sources */,
 				AA1000000000000000000013 /* ActivityLogView.swift in Sources */,
 				11CC44A22CEE614100C7244B /* NudgeViewCoordinator.swift in Sources */,

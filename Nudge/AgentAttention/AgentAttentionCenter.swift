@@ -21,6 +21,7 @@ final class AgentAttentionCenter: ObservableObject {
     private var lastCompletionID: String?
     private var activationObserver: NSObjectProtocol?
     private var lastHandledQuestionKey: HandledQuestionKey?
+    private var expectedActivation = ExpectedActivation()
     private let workspace: NSWorkspace
     private let activityLog = ActivityLogStore.shared
 
@@ -387,7 +388,17 @@ final class AgentAttentionCenter: ObservableObject {
         state.clearRequest(id: id)
     }
 
+    /// Nudge is about to bring `application` forward itself (restoring focus
+    /// after text entry). That activation isn't the user returning to the agent.
+    func willRestoreFocus(to application: NSRunningApplication) {
+        expectedActivation.expect(processIdentifier: application.processIdentifier, at: Date())
+    }
+
     private func applicationDidActivate(_ application: NSRunningApplication) {
+        if expectedActivation.consume(processIdentifier: application.processIdentifier, at: Date()) {
+            return
+        }
+
         if let host = activeEnvelope?.host,
            !host.runsManySessions,
            Self.hostMatches(
