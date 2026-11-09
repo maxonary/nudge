@@ -101,16 +101,40 @@ class NudgeViewModel: NSObject, ObservableObject {
         return false
     }
 
+    /// Natural height of the agent panel, reported by AgentAttentionView.
+    private var agentContentHeight: CGFloat?
+
+    func updateAgentContentHeight(_ height: CGFloat) {
+        guard height > 0, abs((agentContentHeight ?? 0) - height) > 0.5 else { return }
+        agentContentHeight = height
+        guard notchState == .open, AgentAttentionCenter.shared.hasVisibleAgentContent else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            open()
+        } else {
+            withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0)) {
+                open()
+            }
+        }
+    }
+
     func open() {
-        // Agent content replaces the send view, including its GIF draft row.
-        let contentExtraHeight: CGFloat = AgentAttentionCenter.shared.hasVisibleAgentContent
-            ? agentAttentionExtraHeight
-            : (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
+        // Agent content replaces the send view, including its GIF draft row,
+        // and the notch hugs it like the Dynamic Island.
+        let contentHeight: CGFloat
+        let agentAttention = AgentAttentionCenter.shared
+        if agentAttention.hasVisibleAgentContent {
+            let panelHeight = agentContentHeight
+                ?? AgentAttentionView.estimatedHeight(for: agentAttention.state)
+            contentHeight = min(
+                effectiveClosedNotchHeight + agentAttentionChromeHeight + panelHeight,
+                agentAttentionMaxHeight
+            )
+        } else {
+            contentHeight = openNotchSize.height + (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
+        }
         self.notchSize = CGSize(
             width: openNotchSize.width,
-            height: openNotchSize.height
-                + contentExtraHeight
-                + (NudgeDraft.shared.isPickingGIF ? gifPickerExtraHeight : 0)
+            height: contentHeight + (NudgeDraft.shared.isPickingGIF ? gifPickerExtraHeight : 0)
         )
         self.notchState = .open
     }
@@ -126,6 +150,8 @@ class NudgeViewModel: NSObject, ObservableObject {
         // Let the successful text-send animation finish before collapsing,
         // including when the pointer leaves or a shortcut requests closing.
         guard force || (!NudgeDraft.shared.isShowingSentConfirmation && !NudgeDraft.shared.isAwaitingReceipt && !NudgeDraft.shared.isPickingGIF) else { return }
+        // The next agent panel measures itself again; open it from its estimate.
+        agentContentHeight = nil
         self.notchSize = getClosedNotchSize(screenUUID: self.screenUUID)
         self.closedNotchSize = self.notchSize
         self.notchState = .closed

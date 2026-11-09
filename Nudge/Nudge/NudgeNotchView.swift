@@ -37,6 +37,9 @@ struct NudgeNotchView: View {
                         center: agentAttention,
                         focusController: agentFocusController
                     )
+                    .onPreferenceChange(AgentContentHeightPreference.self) { height in
+                        vm.updateAgentContentHeight(height)
+                    }
                 } else if let ping = transport.lastIncoming, isRecent(ping), !draft.isShowingSentConfirmation, !draft.isAwaitingReceipt, !draft.isPickingGIF {
                     incomingView(for: ping)
                 } else {
