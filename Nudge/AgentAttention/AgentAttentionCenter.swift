@@ -69,6 +69,7 @@ final class AgentAttentionCenter: ObservableObject {
             receiveCompletion(completion, envelope: envelope, session: session)
 
         case let .question(questionSet):
+            if handOffIfDuplicateOfActiveRequest(envelope, session: session) { return }
             guard let key = questionKey(for: envelope, questionSet: questionSet),
                   isValid(questionSet),
                   lastHandledQuestionKey != key else {
@@ -85,6 +86,7 @@ final class AgentAttentionCenter: ObservableObject {
             claim(envelope, session: session)
 
         case let .approval(approval):
+            if handOffIfDuplicateOfActiveRequest(envelope, session: session) { return }
             guard state.claim(.approval(approval)) else {
                 activityLog.recordApproval(approval, envelope: envelope, claimed: false)
                 session.handoff()
@@ -302,6 +304,22 @@ final class AgentAttentionCenter: ObservableObject {
         completionEnvelope = envelope
         _ = state.receiveCompletion(completion)
         scheduleCollapseAfterThreeSeconds()
+    }
+
+    /// A second delivery of the request that is already open. It is handed back
+    /// to the agent without touching the log entry or the open request.
+    private func handOffIfDuplicateOfActiveRequest(
+        _ envelope: AgentEventEnvelope,
+        session: AgentBridgeSession
+    ) -> Bool {
+        guard let activeEnvelope,
+              activeEnvelope.source == envelope.source,
+              let activeID = activeEnvelope.event.requestID,
+              activeID == envelope.event.requestID else {
+            return false
+        }
+        session.handoff()
+        return true
     }
 
     private func finishInvalid(_ envelope: AgentEventEnvelope, session: AgentBridgeSession) {
