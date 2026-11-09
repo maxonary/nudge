@@ -405,6 +405,141 @@ class HookHelperTests(unittest.TestCase):
         self.assertEqual(approval["detail"], "Save the readme")
         self.assertEqual(approval["inputSummary"], "file_path: /work/app/README.md")
 
+    def test_long_paths_are_cut_in_the_middle_so_the_filename_survives(self):
+        shared = "/Users/me/projects/app/node_modules/.pnpm/" + "a" * 128
+        self.assertEqual(len(shared), 170)
+        harmless = shared + "/index.js"
+        hostile = shared + "/../../.ssh/authorized_keys"
+
+        harmless_line = self.permission_request(
+            "Write", {"file_path": harmless}
+        )["event"]["payload"]["inputSummary"]
+        hostile_line = self.permission_request(
+            "Write", {"file_path": hostile}
+        )["event"]["payload"]["inputSummary"]
+
+        self.assertNotEqual(harmless_line, hostile_line)
+        self.assertTrue(harmless_line.endswith("/index.js"))
+        self.assertTrue(hostile_line.endswith("/../../.ssh/authorized_keys"))
+        for line, path in ((harmless_line, harmless), (hostile_line, hostile)):
+            value = line[len("file_path: "):]
+            self.assertEqual(len(value), 160)
+            self.assertEqual(value[:50], path[:50])
+            self.assertEqual(value[50], "…")
+            self.assertEqual(value[51:], path[-109:])
+
+    def test_every_leading_path_key_is_cut_in_the_middle(self):
+        for key in ("file_path", "notebook_path", "path", "url"):
+            with self.subTest(key=key):
+                value = "head-" + "m" * 300 + "-tail"
+                approval = self.permission_request(
+                    "Custom", {key: value}
+                )["event"]["payload"]
+
+                text = approval["inputSummary"][len(f"{key}: "):]
+                self.assertEqual(len(text), 160)
+                self.assertTrue(text.startswith("head-"))
+                self.assertTrue(text.endswith("-tail"))
+                self.assertEqual(text[50], "…")
+
+    def test_other_keys_keep_end_truncation(self):
+        value = "head-" + "m" * 300 + "-tail"
+        approval = self.permission_request(
+            "Custom", {"old_string": value}
+        )["event"]["payload"]
+
+        text = approval["inputSummary"][len("old_string: "):]
+        self.assertEqual(text, value[:159] + "…")
+
+    def test_short_paths_are_not_cut(self):
+        path = "/work/" + "d" * 150
+        self.assertEqual(len(path), 156)
+        approval = self.permission_request(
+            "Write", {"file_path": path}
+        )["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"], f"file_path: {path}")
+
+    def test_argument_names_are_cleaned_like_values(self):
+        approval = self.permission_request(
+            "Custom", {"bad\nkey \t name": "value", "ok": "fine"}
+        )["event"]["payload"]
+
+        self.assertEqual(
+            approval["inputSummary"].split("\n"),
+            ["bad key name: value", "ok: fine"],
+        )
+
+    def test_mcp_tool_with_command_argument_shows_every_argument(self):
+        approval = self.permission_request("mcp__ssh__exec", {
+            "host": "prod-db-1",
+            "command": "rm -rf /var/lib/postgresql",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "host: prod-db-1",
+            "command: rm -rf /var/lib/postgresql",
+        ])
+        self.assertNotIn("command", approval)
+        self.assertEqual(approval["detail"], "mcp__ssh__exec")
+
+    def test_non_shell_detail_never_carries_the_command_text(self):
+        for tool_input, expected_detail in (
+            ({"host": "prod-db-1", "command": "rm -rf /data"}, "mcp__ssh__exec"),
+            (
+                {"host": "prod-db-1", "command": "rm -rf /data", "description": "Wipe it"},
+                "Wipe it",
+            ),
+            ({"command": "rm -rf /data"}, "mcp__ssh__exec"),
+        ):
+            with self.subTest(tool_input=tool_input):
+                approval = self.permission_request(
+                    "mcp__ssh__exec", tool_input
+                )["event"]["payload"]
+
+                self.assertEqual(approval["detail"], expected_detail)
+                self.assertNotIn("command", approval)
+                self.assertIn("command: rm -rf /data", approval["inputSummary"])
+
+    def test_non_shell_command_is_an_ordinary_key_in_normal_order(self):
+        approval = self.permission_request("mcp__ssh__exec", {
+            "command": "uptime",
+            "host": "prod-db-1",
+            "file_path": "/tmp/out.log",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "file_path: /tmp/out.log",
+            "command: uptime",
+            "host: prod-db-1",
+        ])
+
+    def test_non_shell_command_uses_end_truncation(self):
+        value = "start-" + "c" * 300 + "-end"
+        approval = self.permission_request(
+            "mcp__ssh__exec", {"command": value}
+        )["event"]["payload"]
+
+        self.assertEqual(
+            approval["inputSummary"], "command: " + value[:159] + "…"
+        )
+
+    def test_apply_patch_keeps_the_shell_behaviour(self):
+        approval = self.permission_request("apply_patch", {
+            "command": "*** Begin Patch\n*** End Patch",
+            "description": "Patch the readme",
+            "workdir": "/work/app",
+        }, source="codex")["event"]["payload"]
+
+        self.assertEqual(approval["command"], "*** Begin Patch\n*** End Patch")
+        self.assertEqual(approval["detail"], "Patch the readme")
+        self.assertNotIn("inputSummary", approval)
+
+        bare = self.permission_request("apply_patch", {
+            "command": "*** Begin Patch\n*** End Patch",
+        }, source="codex")["event"]["payload"]
+        self.assertEqual(bare["detail"], "*** Begin Patch\n*** End Patch")
+
     def test_host_mapping_and_terminal_session_ids(self):
         cases = [
             ("WarpTerminal", "Warp", "dev.warp.Warp-Stable"),

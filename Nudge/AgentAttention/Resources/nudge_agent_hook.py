@@ -26,9 +26,15 @@ BUNDLE_HOST_NAMES = {
     "com.conductor.app": "Conductor",
 }
 
+# Tools whose `command` argument is a shell command. Every other tool treats
+# `command` as an ordinary argument (an MCP `ssh` tool also has a `host`).
+SHELL_TOOLS = frozenset({"Bash", "apply_patch"})
+
 SUMMARY_LEADING_KEYS = ("file_path", "notebook_path", "path", "url")
 SUMMARY_MAX_LINES = 6
 SUMMARY_MAX_VALUE_LENGTH = 160
+# Paths differ at the end (the filename), so they keep their tail, not their head.
+SUMMARY_PATH_HEAD_LENGTH = 50
 
 
 def host_from_environment(environ):
@@ -51,14 +57,23 @@ def host_from_environment(environ):
     }
 
 
-def _summary_value(value):
+def _summary_value(key, value):
     if isinstance(value, str):
         text = " ".join(value.split())
     else:
         text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    if len(text) > SUMMARY_MAX_VALUE_LENGTH:
-        text = text[: SUMMARY_MAX_VALUE_LENGTH - 1] + "…"
-    return text
+    if len(text) <= SUMMARY_MAX_VALUE_LENGTH:
+        return text
+    if key in SUMMARY_LEADING_KEYS:
+        tail_length = SUMMARY_MAX_VALUE_LENGTH - SUMMARY_PATH_HEAD_LENGTH - 1
+        return text[:SUMMARY_PATH_HEAD_LENGTH] + "…" + text[-tail_length:]
+    return text[: SUMMARY_MAX_VALUE_LENGTH - 1] + "…"
+
+
+def _summary_line(key, value):
+    # Names are cleaned like values: a newline in one must not become a line.
+    name = " ".join(str(key).split())
+    return f"{name}: {_summary_value(key, value)}"
 
 
 def summarize_tool_input(tool_input):
@@ -70,8 +85,7 @@ def summarize_tool_input(tool_input):
     ordered = leading + [key for key in keys if key not in leading]
 
     lines = [
-        f"{key}: {_summary_value(tool_input[key])}"
-        for key in ordered[:SUMMARY_MAX_LINES]
+        _summary_line(key, tool_input[key]) for key in ordered[:SUMMARY_MAX_LINES]
     ]
     omitted = len(ordered) - SUMMARY_MAX_LINES
     if omitted > 0:
@@ -181,11 +195,14 @@ def normalize_event(source, hook_input, environ=None):
         if not isinstance(request_id, str) or not request_id:
             request_id = str(uuid.uuid4())
         description = tool_input.get("description")
-        command = tool_input.get("command")
         if not isinstance(description, str):
             description = None
-        if not isinstance(command, str):
-            command = None
+        # Only shell tools have a `command` payload field. For every other tool
+        # `command` stays None, so it can neither become the `detail` (which the
+        # activity log keeps) nor hide the tool's other arguments.
+        command = None
+        if tool_name in SHELL_TOOLS and isinstance(tool_input.get("command"), str):
+            command = tool_input["command"]
 
         payload = {
             "id": request_id,

@@ -84,6 +84,60 @@ struct ActivityLogEntryTests {
     }
 
     @Test
+    func nonShellToolWithACommandArgumentNeverLeaksHostOrCommandIntoTheLog() throws {
+        // The shape the hook helper sends for a tool that is not a shell:
+        // no `command` field, the command is just another summary line.
+        func wire(detail: String) -> Data {
+            Data(
+                """
+                {
+                  "protocolVersion": 1,
+                  "source": "claudeCode",
+                  "cwd": "/work/app",
+                  "project": "app",
+                  "host": {"appName": "Terminal", "bundleID": "com.apple.Terminal"},
+                  "event": {
+                    "type": "approval",
+                    "payload": {
+                      "id": "ssh",
+                      "source": "claudeCode",
+                      "toolName": "mcp__ssh__exec",
+                      "detail": "\(detail)",
+                      "inputSummary": "host: prod-db-1\\ncommand: rm -rf /var/lib/postgresql",
+                      "cwd": "/work/app",
+                      "allowsClaudeSessionRule": false
+                    }
+                  }
+                }
+                """.utf8
+            )
+        }
+
+        let bareEnvelope = try JSONDecoder().decode(AgentEventEnvelope.self, from: wire(detail: "mcp__ssh__exec"))
+        let describedEnvelope = try JSONDecoder().decode(AgentEventEnvelope.self, from: wire(detail: "Datenbank leeren"))
+        guard case let .approval(bareApproval) = bareEnvelope.event,
+              case let .approval(describedApproval) = describedEnvelope.event
+        else {
+            Issue.record("expected approval events")
+            return
+        }
+
+        #expect(bareApproval.command == nil)
+        #expect(bareApproval.inputSummary?.contains("prod-db-1") == true)
+        let bare = ActivityLogEntry.approval(bareApproval, envelope: bareEnvelope, date: Date(), claimed: true)
+        let described = ActivityLogEntry.approval(describedApproval, envelope: describedEnvelope, date: Date(), claimed: true)
+
+        #expect(bare.summary == nil)
+        #expect(described.summary == "Datenbank leeren")
+        for entry in [bare, described] {
+            let stored = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
+            #expect(!stored.contains("prod-db-1"))
+            #expect(!stored.contains("rm -rf"))
+            #expect(!stored.contains("postgresql"))
+        }
+    }
+
+    @Test
     func questionUsesTheFirstPromptAsSummary() {
         let set = AgentQuestionSet(id: "q1", header: "Höhe", questions: [
             AgentQuestion(id: "a", prompt: "Wie hoch soll die Notch werden?", choices: [], multiSelect: false, allowsFreeform: true),
