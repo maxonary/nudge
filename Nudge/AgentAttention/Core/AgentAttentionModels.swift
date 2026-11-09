@@ -193,6 +193,8 @@ public struct AgentApproval: Codable, Equatable, Sendable {
     public var toolName: String
     public var detail: String
     public var command: String?
+    /// What a non-shell tool will touch, one `key: value` line per argument.
+    public var inputSummary: String?
     public var cwd: String?
     public var allowsClaudeSessionRule: Bool
 
@@ -202,6 +204,7 @@ public struct AgentApproval: Codable, Equatable, Sendable {
         toolName: String,
         detail: String,
         command: String? = nil,
+        inputSummary: String? = nil,
         cwd: String? = nil,
         allowsClaudeSessionRule: Bool
     ) {
@@ -210,6 +213,7 @@ public struct AgentApproval: Codable, Equatable, Sendable {
         self.toolName = toolName
         self.detail = detail
         self.command = command
+        self.inputSummary = inputSummary
         self.cwd = cwd
         self.allowsClaudeSessionRule = allowsClaudeSessionRule
     }

@@ -105,7 +105,8 @@ extension ActivityLogEntry {
         )
     }
 
-    /// Keeps the human description of the request, never the command itself.
+    /// Keeps the human description of the request, never the command or the
+    /// tool's input summary.
     public static func approval(
         _ approval: AgentApproval,
         envelope: AgentEventEnvelope,

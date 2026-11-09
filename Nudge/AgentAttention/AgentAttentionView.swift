@@ -90,6 +90,22 @@ struct AgentAttentionView: View {
 
     // MARK: - Approval
 
+    /// The monospaced box that shows what an approval will run or touch.
+    private func monospacedBox(_ text: String, lineLimit: Int) -> some View {
+        Text(text)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.86))
+            .lineLimit(lineLimit)
+            .textSelection(.enabled)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.07))
+            )
+    }
+
     private func approvalView(_ approval: AgentApproval) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
@@ -112,19 +128,11 @@ struct AgentAttentionView: View {
             }
 
             if let command = approval.command, !command.isEmpty {
-                Text(command)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.86))
-                    .lineLimit(3)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.white.opacity(0.07))
-                    )
+                monospacedBox(command, lineLimit: 3)
                     .accessibilityLabel("Befehl: \(command)")
+            } else if let summary = approval.inputSummary, !summary.isEmpty {
+                monospacedBox(summary, lineLimit: 6)
+                    .accessibilityLabel("Details: \(summary)")
             }
 
             HStack(spacing: 8) {
@@ -439,8 +447,16 @@ struct AgentAttentionView: View {
             let rows = choices.reduce(CGFloat(38)) { $0 + ($1.description.isEmpty ? 36 : 44) }
             return verticalPadding + header + gap + rows + gap + buttonRow
         case let .approval(approval):
-            let command: CGFloat = (approval.command?.isEmpty == false) ? 38 + gap : 0
-            return verticalPadding + header + gap + command + buttonRow
+            let details: CGFloat
+            if approval.command?.isEmpty == false {
+                details = 38 + gap
+            } else if let summary = approval.inputSummary, !summary.isEmpty {
+                let lines = min(6, summary.split(separator: "\n", omittingEmptySubsequences: false).count)
+                details = 23 + CGFloat(lines) * 15 + gap
+            } else {
+                details = 0
+            }
+            return verticalPadding + header + gap + details + buttonRow
         case nil:
             return verticalPadding + header + 8
         }

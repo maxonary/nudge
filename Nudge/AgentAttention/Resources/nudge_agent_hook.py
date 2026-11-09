@@ -26,6 +26,10 @@ BUNDLE_HOST_NAMES = {
     "com.conductor.app": "Conductor",
 }
 
+SUMMARY_LEADING_KEYS = ("file_path", "notebook_path", "path", "url")
+SUMMARY_MAX_LINES = 6
+SUMMARY_MAX_VALUE_LENGTH = 160
+
 
 def host_from_environment(environ):
     term_program = environ.get("TERM_PROGRAM")
@@ -45,6 +49,34 @@ def host_from_environment(environ):
             environ.get("TERM_SESSION_ID") or environ.get("ITERM_SESSION_ID")
         ),
     }
+
+
+def _summary_value(value):
+    if isinstance(value, str):
+        text = " ".join(value.split())
+    else:
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if len(text) > SUMMARY_MAX_VALUE_LENGTH:
+        text = text[: SUMMARY_MAX_VALUE_LENGTH - 1] + "…"
+    return text
+
+
+def summarize_tool_input(tool_input):
+    """Describe what a non-shell tool call will touch, one `key: value` line each."""
+    if not isinstance(tool_input, dict):
+        return None
+    keys = [key for key in tool_input if key != "description"]
+    leading = [key for key in SUMMARY_LEADING_KEYS if key in keys]
+    ordered = leading + [key for key in keys if key not in leading]
+
+    lines = [
+        f"{key}: {_summary_value(tool_input[key])}"
+        for key in ordered[:SUMMARY_MAX_LINES]
+    ]
+    omitted = len(ordered) - SUMMARY_MAX_LINES
+    if omitted > 0:
+        lines.append(f"… +{omitted} weitere")
+    return "\n".join(lines) if lines else None
 
 
 def normalize_event(source, hook_input, environ=None):
@@ -167,6 +199,10 @@ def normalize_event(source, hook_input, environ=None):
         }
         if command is not None:
             payload["command"] = command
+        else:
+            summary = summarize_tool_input(tool_input)
+            if summary is not None:
+                payload["inputSummary"] = summary
         event_type = "approval"
 
     if event_type is None:

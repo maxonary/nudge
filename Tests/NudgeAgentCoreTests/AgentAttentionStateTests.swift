@@ -261,6 +261,68 @@ struct AgentAttentionStateTests {
 
         #expect(decoded == envelope)
     }
+
+    @Test
+    func approvalInputSummaryRoundTripsThroughTheEnvelope() throws {
+        let approval = AgentApproval(
+            id: "write",
+            source: .claudeCode,
+            toolName: "Write",
+            detail: "Write",
+            inputSummary: "file_path: /work/app/README.md\ncontent: hello",
+            cwd: "/work/app",
+            allowsClaudeSessionRule: false
+        )
+        let envelope = approvalEnvelope(approval)
+
+        let decoded = try JSONDecoder().decode(
+            AgentEventEnvelope.self,
+            from: JSONEncoder().encode(envelope)
+        )
+
+        #expect(decoded == envelope)
+        #expect(decoded.approval?.inputSummary == "file_path: /work/app/README.md\ncontent: hello")
+        #expect(decoded.approval?.command == nil)
+    }
+
+    @Test
+    func approvalWirePayloadDecodesWithAndWithoutInputSummary() throws {
+        func wire(_ extraPayload: String) -> Data {
+            Data(
+                """
+                {
+                  "protocolVersion": 1,
+                  "source": "claudeCode",
+                  "cwd": "/work/app",
+                  "project": "app",
+                  "host": {"appName": "Terminal", "bundleID": "com.apple.Terminal"},
+                  "event": {
+                    "type": "approval",
+                    "payload": {
+                      "id": "write",
+                      "source": "claudeCode",
+                      "toolName": "Write",
+                      "detail": "Write",
+                      "cwd": "/work/app",
+                      "allowsClaudeSessionRule": false\(extraPayload)
+                    }
+                  }
+                }
+                """.utf8
+            )
+        }
+
+        let without = try JSONDecoder().decode(AgentEventEnvelope.self, from: wire(""))
+        let with = try JSONDecoder().decode(
+            AgentEventEnvelope.self,
+            from: wire(#", "inputSummary": "file_path: /work/app/a.txt""#)
+        )
+
+        #expect(without.approval?.inputSummary == nil)
+        #expect(without.approval?.toolName == "Write")
+        #expect(with.approval?.inputSummary == "file_path: /work/app/a.txt")
+        #expect(with.approval?.command == nil)
+    }
 }
 
 private func completionEnvelope() -> AgentEventEnvelope {
@@ -280,10 +342,26 @@ private func completionEnvelope() -> AgentEventEnvelope {
     )
 }
 
+private func approvalEnvelope(_ approval: AgentApproval) -> AgentEventEnvelope {
+    AgentEventEnvelope(
+        protocolVersion: 1,
+        source: .claudeCode,
+        cwd: "/work/app",
+        project: "app",
+        host: .init(appName: "Terminal", bundleID: "com.apple.Terminal"),
+        event: .approval(approval)
+    )
+}
+
 private extension AgentEventEnvelope {
     var completion: AgentCompletion? {
         guard case let .completion(completion) = event else { return nil }
         return completion
+    }
+
+    var approval: AgentApproval? {
+        guard case let .approval(approval) = event else { return nil }
+        return approval
     }
 }
 

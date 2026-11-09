@@ -59,6 +59,31 @@ struct ActivityLogEntryTests {
     }
 
     @Test
+    func approvalNeverKeepsTheToolInputSummary() throws {
+        let write = AgentApproval(
+            id: "a3", source: .claudeCode, toolName: "Write", detail: "Datei speichern",
+            inputSummary: "file_path: ~/.ssh/authorized_keys\ncontent: ssh-ed25519 AAAA",
+            allowsClaudeSessionRule: false
+        )
+        let bareWrite = AgentApproval(
+            id: "a4", source: .claudeCode, toolName: "Write", detail: "Write",
+            inputSummary: "file_path: ~/.ssh/authorized_keys",
+            allowsClaudeSessionRule: false
+        )
+
+        let described = ActivityLogEntry.approval(write, envelope: envelope(.approval(write)), date: Date(), claimed: true)
+        let bare = ActivityLogEntry.approval(bareWrite, envelope: envelope(.approval(bareWrite)), date: Date(), claimed: true)
+
+        #expect(described.summary == "Datei speichern")
+        #expect(bare.summary == nil)
+        for entry in [described, bare] {
+            let stored = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
+            #expect(!stored.contains("authorized_keys"))
+            #expect(!stored.contains("ssh-ed25519"))
+        }
+    }
+
+    @Test
     func questionUsesTheFirstPromptAsSummary() {
         let set = AgentQuestionSet(id: "q1", header: "Höhe", questions: [
             AgentQuestion(id: "a", prompt: "Wie hoch soll die Notch werden?", choices: [], multiSelect: false, allowsFreeform: true),

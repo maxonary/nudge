@@ -243,6 +243,168 @@ class HookHelperTests(unittest.TestCase):
             "allowsClaudeSessionRule": False,
         })
 
+    def permission_request(self, tool_name, tool_input, source="claude"):
+        event = {
+            "session_id": "session",
+            "cwd": "/work/app",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+        }
+        return self.module.normalize_event(source, event, {})
+
+    def test_write_approvals_for_different_files_are_distinguishable(self):
+        readme = self.permission_request(
+            "Write", {"file_path": "/work/app/README.md", "content": "hello"}
+        )
+        keys = self.permission_request(
+            "Write", {"file_path": "~/.ssh/authorized_keys", "content": "hello"}
+        )
+
+        readme_summary = readme["event"]["payload"]["inputSummary"]
+        keys_summary = keys["event"]["payload"]["inputSummary"]
+        self.assertTrue(readme_summary.startswith("file_path: /work/app/README.md"))
+        self.assertTrue(keys_summary.startswith("file_path: ~/.ssh/authorized_keys"))
+        self.assertNotEqual(readme["event"]["payload"], keys["event"]["payload"])
+        self.assertNotIn("command", readme["event"]["payload"])
+
+    def test_edit_summary_lists_path_first_and_collapses_whitespace(self):
+        approval = self.permission_request("Edit", {
+            "old_string": "def old():\n    return 1\n",
+            "new_string": "def new():\n\treturn 2\n",
+            "file_path": "/work/app/main.py",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "file_path: /work/app/main.py",
+            "old_string: def old(): return 1",
+            "new_string: def new(): return 2",
+        ])
+
+    def test_summary_puts_path_like_keys_first_in_fixed_order(self):
+        approval = self.permission_request("Fetch", {
+            "timeout": 30,
+            "url": "https://example.com",
+            "path": "/tmp/out",
+            "notebook_path": "/work/app/n.ipynb",
+            "file_path": "/work/app/a.txt",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "file_path: /work/app/a.txt",
+            "notebook_path: /work/app/n.ipynb",
+            "path: /tmp/out",
+            "url: https://example.com",
+            "timeout: 30",
+        ])
+
+    def test_mcp_tool_summary_renders_lists_as_compact_json(self):
+        approval = self.permission_request("mcp__github__create_issue", {
+            "owner": "arvana",
+            "repo": "nudge",
+            "title": "Crash on launch",
+            "labels": ["bug", "p1"],
+        })["event"]["payload"]
+
+        self.assertEqual(approval["toolName"], "mcp__github__create_issue")
+        self.assertEqual(approval["detail"], "mcp__github__create_issue")
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "owner: arvana",
+            "repo: nudge",
+            "title: Crash on launch",
+            'labels: ["bug","p1"]',
+        ])
+
+    def test_summary_renders_other_values_as_compact_json(self):
+        approval = self.permission_request("Custom", {
+            "draft": False,
+            "retries": 3,
+            "milestone": None,
+            "meta": {"a": 1, "b": "ä"},
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "draft: false",
+            "retries: 3",
+            "milestone: null",
+            'meta: {"a":1,"b":"ä"}',
+        ])
+
+    def test_summary_truncates_long_values_to_160_characters(self):
+        approval = self.permission_request("Write", {
+            "file_path": "/work/app/a.txt",
+            "content": "x" * 500,
+            "list": ["y" * 500],
+        })["event"]["payload"]
+
+        lines = approval["inputSummary"].split("\n")
+        self.assertEqual(lines[0], "file_path: /work/app/a.txt")
+        content_value = lines[1][len("content: "):]
+        self.assertEqual(content_value, "x" * 159 + "…")
+        self.assertEqual(len(content_value), 160)
+        list_value = lines[2][len("list: "):]
+        self.assertEqual(len(list_value), 160)
+        self.assertTrue(list_value.endswith("…"))
+
+    def test_value_of_exactly_160_characters_is_not_truncated(self):
+        approval = self.permission_request(
+            "Write", {"content": "x" * 160}
+        )["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"], "content: " + "x" * 160)
+
+    def test_summary_caps_at_six_lines_and_counts_omitted_keys(self):
+        approval = self.permission_request(
+            "Custom", {f"key{i}": f"value{i}" for i in range(9)}
+        )["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "key0: value0",
+            "key1: value1",
+            "key2: value2",
+            "key3: value3",
+            "key4: value4",
+            "key5: value5",
+            "… +3 weitere",
+        ])
+
+    def test_exactly_six_keys_have_no_overflow_line(self):
+        approval = self.permission_request(
+            "Custom", {f"key{i}": i for i in range(6)}
+        )["event"]["payload"]
+
+        self.assertEqual(len(approval["inputSummary"].split("\n")), 6)
+        self.assertNotIn("weitere", approval["inputSummary"])
+
+    def test_shell_approval_keeps_command_and_adds_no_summary(self):
+        approval = self.permission_request("Bash", {
+            "command": "npm test",
+            "description": "Run the test suite",
+            "timeout": 60000,
+        })["event"]["payload"]
+
+        self.assertNotIn("inputSummary", approval)
+        self.assertEqual(approval["command"], "npm test")
+        self.assertEqual(approval["detail"], "Run the test suite")
+
+    def test_description_only_or_empty_input_adds_no_summary(self):
+        for tool_input in ({"description": "Do the thing"}, {}, None):
+            with self.subTest(tool_input=tool_input):
+                approval = self.permission_request(
+                    "Write", tool_input
+                )["event"]["payload"]
+
+                self.assertNotIn("inputSummary", approval)
+
+    def test_description_stays_the_detail_and_out_of_the_summary(self):
+        approval = self.permission_request("Write", {
+            "description": "Save the readme",
+            "file_path": "/work/app/README.md",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["detail"], "Save the readme")
+        self.assertEqual(approval["inputSummary"], "file_path: /work/app/README.md")
+
     def test_host_mapping_and_terminal_session_ids(self):
         cases = [
             ("WarpTerminal", "Warp", "dev.warp.Warp-Stable"),
