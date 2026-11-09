@@ -37,6 +37,8 @@ native UI. Connect Claude Code or Codex explicitly in Nudge Settings.
 - Busy or unanswered requests fail open to the agent; Nudge keeps no queue.
 - Nudge reliably activates the originating host app, but exact terminal-tab
   targeting depends on the host and is not guaranteed.
+- Conductor is recognized as a host. Because it runs many chats side by side,
+  Nudge keeps showing its notifications while Conductor is in front.
 - Agent payloads stay on-device over an owner-only Unix socket. They are not
   persisted or uploaded. Human Nudge/ntfy pings remain a separate feature.
 - AI summaries, history, and an inbox are intentionally deferred. Disconnect

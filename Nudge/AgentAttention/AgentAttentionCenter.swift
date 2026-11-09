@@ -348,6 +348,7 @@ final class AgentAttentionCenter: ObservableObject {
 
     private func applicationDidActivate(_ application: NSRunningApplication) {
         if let host = activeEnvelope?.host,
+           !host.runsManySessions,
            Self.hostMatches(
                applicationBundleID: application.bundleIdentifier,
                localizedName: application.localizedName,
@@ -364,6 +365,7 @@ final class AgentAttentionCenter: ObservableObject {
         }
 
         if let host = completionEnvelope?.host,
+           !host.runsManySessions,
            Self.hostMatches(
                applicationBundleID: application.bundleIdentifier,
                localizedName: application.localizedName,
@@ -377,7 +379,8 @@ final class AgentAttentionCenter: ObservableObject {
     }
 
     private func isOriginFrontmost(_ host: AgentHost) -> Bool {
-        guard let application = workspace.frontmostApplication else { return false }
+        guard !host.runsManySessions,
+              let application = workspace.frontmostApplication else { return false }
         return Self.hostMatches(
             applicationBundleID: application.bundleIdentifier,
             localizedName: application.localizedName,
@@ -386,20 +389,19 @@ final class AgentAttentionCenter: ObservableObject {
     }
 
     private func activate(host: AgentHost) {
-        if let bundleID = host.bundleID {
-            if let application = NSRunningApplication
-                .runningApplications(withBundleIdentifier: bundleID)
-                .first {
-                application.activate(options: [.activateAllWindows])
-                return
-            }
-        }
-
-        if let application = workspace.runningApplications.first(where: {
+        let application = host.bundleID.flatMap {
+            NSRunningApplication.runningApplications(withBundleIdentifier: $0).first
+        } ?? workspace.runningApplications.first(where: {
             Self.localizedNameMatches($0.localizedName, host: host)
-        }) {
-            application.activate(options: [.activateAllWindows])
-        }
+        })
+        guard let applicationURL = application?.bundleURL else { return }
+
+        // macOS ignores NSRunningApplication.activate() from an app that isn't
+        // active, and the non-activating notch never makes Nudge active.
+        // Opening the running app through Launch Services brings it forward.
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        workspace.openApplication(at: applicationURL, configuration: configuration)
     }
 
     private func playCompletionSound() {

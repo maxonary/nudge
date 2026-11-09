@@ -22,9 +22,22 @@ HOSTS = {
 }
 
 
+BUNDLE_HOST_NAMES = {
+    "com.conductor.app": "Conductor",
+}
+
+
 def host_from_environment(environ):
-    term_program = environ.get("TERM_PROGRAM") or "Unknown terminal"
-    app_name, bundle_id = HOSTS.get(term_program, (term_program, None))
+    term_program = environ.get("TERM_PROGRAM")
+    if term_program in HOSTS:
+        app_name, bundle_id = HOSTS[term_program]
+    else:
+        # macOS passes the launching app's bundle ID to its child processes.
+        # It identifies hosts without a known TERM_PROGRAM, such as Conductor.
+        bundle_id = environ.get("__CFBundleIdentifier") or None
+        app_name = (
+            BUNDLE_HOST_NAMES.get(bundle_id) or term_program or "Unknown terminal"
+        )
     return {
         "appName": app_name,
         "bundleID": bundle_id,

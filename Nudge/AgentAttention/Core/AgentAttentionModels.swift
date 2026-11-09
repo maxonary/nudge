@@ -17,6 +17,17 @@ public struct AgentHost: Codable, Equatable, Sendable {
     }
 }
 
+extension AgentHost {
+    /// Hosts that run many agent chats side by side.
+    static let manySessionBundleIDs: Set<String> = ["com.conductor.app"]
+
+    /// When true, the host being frontmost says nothing about whether the
+    /// user is looking at this particular chat.
+    public var runsManySessions: Bool {
+        bundleID.map(Self.manySessionBundleIDs.contains) ?? false
+    }
+}
+
 public enum AgentEventKind: String, Codable, Equatable, Sendable {
     case completion
     case question

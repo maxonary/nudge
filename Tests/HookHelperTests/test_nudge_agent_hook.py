@@ -270,6 +270,30 @@ class HookHelperTests(unittest.TestCase):
         })
         self.assertEqual(host["terminalSessionID"], "fallback-session")
 
+    def test_host_without_known_term_program_uses_launching_app_bundle_id(self):
+        conductor = self.module.host_from_environment({
+            "__CFBundleIdentifier": "com.conductor.app",
+        })
+        self.assertEqual(conductor, {
+            "appName": "Conductor",
+            "bundleID": "com.conductor.app",
+            "terminalSessionID": None,
+        })
+
+        ghostty = self.module.host_from_environment({
+            "TERM_PROGRAM": "ghostty",
+            "__CFBundleIdentifier": "com.mitchellh.ghostty",
+        })
+        self.assertEqual(ghostty["appName"], "ghostty")
+        self.assertEqual(ghostty["bundleID"], "com.mitchellh.ghostty")
+
+        known = self.module.host_from_environment({
+            "TERM_PROGRAM": "vscode",
+            "__CFBundleIdentifier": "com.microsoft.VSCode",
+        })
+        self.assertEqual(known["appName"], "Visual Studio Code")
+        self.assertEqual(known["bundleID"], "com.microsoft.VSCode")
+
     def test_claude_question_answer_preserves_questions(self):
         event = claude_question_fixture()
         output = self.module.output_for_response("claude", event, {
