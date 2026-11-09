@@ -102,11 +102,30 @@ class NudgeViewModel: NSObject, ObservableObject {
     }
 
     func open() {
-        self.notchSize = openNotchSize
+        // Agent content replaces the send view, including its GIF draft row.
+        let contentExtraHeight: CGFloat = AgentAttentionCenter.shared.hasVisibleAgentContent
+            ? agentAttentionExtraHeight
+            : (NudgeDraft.shared.gif == nil ? 0 : gifDraftExtraHeight)
+        self.notchSize = CGSize(
+            width: openNotchSize.width,
+            height: openNotchSize.height
+                + contentExtraHeight
+                + (NudgeDraft.shared.isPickingGIF ? gifPickerExtraHeight : 0)
+        )
         self.notchState = .open
     }
 
-    func close() {
+    func dismiss() {
+        NudgeDraft.shared.isPickingGIF = false
+        NudgeDraft.shared.isShowingSentConfirmation = false
+        NudgeTransport.shared.lastIncoming = nil
+        close(force: true)
+    }
+
+    func close(force: Bool = false) {
+        // Let the successful text-send animation finish before collapsing,
+        // including when the pointer leaves or a shortcut requests closing.
+        guard force || (!NudgeDraft.shared.isShowingSentConfirmation && !NudgeDraft.shared.isAwaitingReceipt && !NudgeDraft.shared.isPickingGIF) else { return }
         self.notchSize = getClosedNotchSize(screenUUID: self.screenUUID)
         self.closedNotchSize = self.notchSize
         self.notchState = .closed

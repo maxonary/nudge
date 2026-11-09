@@ -1,32 +1,25 @@
 # Nudge
 
-Glanceable "raise hand" signal between Ontora founders that pierces noise-cancelling
-headphones without forcing anyone to physically get up.
+A lightweight macOS notch app for getting a teammate's attention, with optional text and GIFs. Nudge uses a shared team password and ntfy.sh to exchange encrypted nudges without separate user accounts.
 
-<img width="1300" height="710" alt="Nudge Giff" src="https://github.com/user-attachments/assets/63198e78-cd57-4d78-873b-60f4fef360e2" />
+## Install and join a team
 
-## Backstory
+1. Download the latest signed and notarized app from [Releases](https://github.com/maxonary/nudge/releases).
+2. Unzip it and drag **Nudge.app** into **Applications**.
+3. Open Nudge, choose a unique name, and enter the same team password as your teammates.
+4. Allow notifications if you want backup macOS banners.
 
-Ontora is a 3-founder YC P26 startup (Max, Leon, David) sharing a room in
-San Francisco. Leon and David both wear noise-cancelling headphones for deep
-work. Slack and WhatsApp don't pierce headphones. Calling someone in the same
-room feels insane. So the only way to get their attention has been to stand
-up and tap them on the shoulder, which kills your own focus too.
+Share the app and team password privately to invite another teammate. Settings → Team password → **Copy password** copies your current password from Keychain. Teammates appear automatically after their apps announce themselves; discovery can take up to 30 minutes. Restarting existing teammates' apps after a new teammate joins speeds up discovery.
 
-<img width="687" height="440" alt="Bildschirmfoto 2026-05-14 um 22 55 04" src="https://github.com/user-attachments/assets/afe4e9ac-8836-48b6-a04a-db084491adbb" />
+## Send a nudge
 
-Nudge fixes that: a glanceable signal in the MacBook notch. Click your notch,
-pick a teammate, their notch expands for ~6 seconds with `{sender} wants you`.
-A backup macOS notification fires in case the notch is off-screen (external
-monitor, full-screen window). No backend, no accounts, no message text —
-just the ping.
+Hover or click the notch, optionally type a message, and click **Ping [name]**.
 
-The friction of "I have to move the cursor to my notch to ping you" is a
-feature, not a bug. It filters out interruptions that aren't worth the cost.
+For a GIF, click the image button. The notch expands into a GIF browser and updates results as you type. Clicking a GIF attaches it immediately and returns to a preview. Click the remove button to discard it, or choose a teammate to send it.
 
-Nudge is a fork of [Nudge](https://github.com/TheBoredTeam/boring.notch).
-Everything that doesn't serve the team-ping flow is disabled in this build;
-see `TODO_V2_CLEANUP.md` for the dormant code still on disk.
+For text nudges, a spinner waits for a delivery receipt. The animated checkmark appears only when the recipient's app confirms receipt. Both apps need version 0.5.2 or later for receipts; an older recipient can still receive the nudge. A receipt confirms app delivery, not that a person has read it. If no receipt arrives within eight seconds, Nudge shows **Sent — receipt not confirmed**.
+
+Press **Escape** while interacting with the notch, or click outside it, to close it. Unsent text and attached GIFs remain available when you reopen it.
 
 ## Agent Attention (V0)
 
@@ -50,118 +43,22 @@ native UI. Connect Claude Code or Codex explicitly in Nudge Settings.
   removes only Nudge-owned registrations; the inactive helper may remain on
   disk locally.
 
-## The shared topic nonce
+## Settings and updates
 
-The transport is [ntfy.sh](https://ntfy.sh) — a public, free, no-account pub/sub
-service. Each user subscribes to a topic derived from their name plus a
-shared 12-char lowercase nonce. The nonce is the only thing that keeps random
-people on the internet from being able to ping us.
+The hand-wave menu includes Settings, sound and notification toggles, launch at login, **Check for Updates**, and Quit. Settings also contains your identity, team password, known teammates, all-time statistics, and an optional GIF API key override.
 
-The current nonce (baked into the build, read from `Nudge/Nudge/NudgeConstants.swift`):
+Check for Updates compares the installed version with the latest GitHub release and opens the download page when an update is available. To install it, quit Nudge and replace Nudge.app in Applications. Existing nudge counts, leaderboard totals, identity, and the team password are retained.
 
-```
-k4n9pq7vx2tm
-```
+See [CHANGELOG.md](CHANGELOG.md) for release changes.
 
-**Every Ontora teammate's build MUST have the same nonce.** To rotate it:
-edit `nudgeNonce` in `NudgeConstants.swift`, commit, and have everyone pull
-and rebuild.
+## Build
 
-The full topic for a given recipient is:
+Requires macOS 14 or later and a compatible Xcode installation. Open `Nudge.xcodeproj` and run the Nudge scheme. Local development builds need a Klipy API key in Settings → GIFs to search GIFs; release builds receive a shared key through CI.
 
-```
-nudge-ontora-<recipient-lowercased>-<nonce>
-```
+## Transport
 
-…which you can also poke from a terminal:
-
-```bash
-# Ping yourself for testing
-curl -d "Max" -H "Title: Max wants you" \
-    https://ntfy.sh/nudge-ontora-leon-k4n9pq7vx2tm
-```
-
-## Build & run
-
-**Requirements:** macOS 14 (Sonoma) or later, Xcode 16 or later.
-
-```bash
-git clone <this repo>
-cd <repo>
-open Nudge.xcodeproj
-# In Xcode, hit ⌘R
-```
-
-On first launch:
-
-1. A 400×600 window appears asking "Who are you? [Max] [Leon] [David]".
-2. Pick your name. Nudge asks for notification permission (used for the
-   backup banner when the notch isn't visible). Grant or skip.
-3. The window closes and your notch becomes the Nudge surface.
-
-That's it. Hover the notch → it expands → tap a teammate's name → they get
-pinged.
-
-## Sending a ping
-
-- Hover the notch (or click it).
-- Tap `[Ping <teammate>]`.
-- You'll feel a trackpad haptic and the notch will briefly highlight the
-  pressed button before collapsing.
-
-## Receiving a ping
-
-- Your notch auto-expands and shows the sender's initial + "{sender} wants
-  you" for 6 seconds.
-- A backup macOS notification fires at the same time (toggleable in
-  Settings).
-- A soft "Pop" sound plays (toggleable in Settings).
-
-If you happen to be hovering the notch when a ping arrives, it stays open
-until you move away.
-
-## Settings
-
-Open via the menu bar icon (the wave 👋) → Settings, or `⌘,` while the notch
-has context-menu focus.
-
-The settings window has one pane:
-
-- **Identity** — the three name buttons. Tap to switch identities; the new
-  subscription starts immediately.
-- **Receive behavior** — sound on/off, backup notification on/off.
-- **Shared nonce** — read-only display + copy button. Use this to verify
-  every teammate has the same value.
-
-## Local testing without a teammate
-
-1. Pick "Max" on first launch.
-2. From another terminal, ping yourself as if you were Leon:
-   ```bash
-   curl -d "Leon" -H "Title: Leon wants you" \
-     https://ntfy.sh/nudge-ontora-max-k4n9pq7vx2tm
-   ```
-3. Your notch expands within ~1 second showing "Leon wants you".
-
-To verify the send side, run two debug builds (different `DerivedData`
-or use two laptops), switch one to Leon via Settings, ping from Max.
-
-## What's intentionally not in v1
-
-- Reply / ack channel ("on my way" / "5 min")
-- Custom message text per ping
-- Urgency tiers
-- Auth, accounts, end-to-end encryption
-- More than 3 users
-- App Store distribution, code signing, Sparkle auto-update
+Every team member derives the same ntfy topic and encryption key from the shared password. Names, messages, GIF links, and receipts travel inside AES-GCM-encrypted payloads. Each recipient filters pings by name, so use unique names within a team. The public ntfy service carries the traffic; GIF search and images come from Klipy and its media hosts.
 
 ## Credits
 
-This is a fork of [Nudge](https://github.com/TheBoredTeam/boring.notch)
-by The Boring Team — their notch overlay window plumbing, expand/collapse
-animations, and menu bar wiring are doing the heavy lifting here. Nudge keeps
-their `LICENSE` intact and credits them in
-[`THIRD_PARTY_LICENSES`](./THIRD_PARTY_LICENSES).
-
-The notch idea, the team-ping flow, and the surgery to strip Nudge
-down to it are ours.
+Nudge is a fork of [boring.notch](https://github.com/TheBoredTeam/boring.notch) by The Boring Team. Its notch window plumbing and animations underpin the team-ping interface. See [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) and [LICENSE](LICENSE).

@@ -20,6 +20,7 @@ struct DynamicNotchApp: App {
     @ObservedObject var identity = NudgeIdentity.shared
     @ObservedObject var teamSecret = NudgeTeamSecret.shared
     @ObservedObject var stats = NudgeStats.shared
+    @ObservedObject var updateChecker = NudgeUpdateChecker.shared
     @Environment(\.openWindow) var openWindow
     @State private var launchAtLogin: Bool = LoginItem.isEnabled
 
@@ -39,9 +40,9 @@ struct DynamicNotchApp: App {
             Text("Nudges sent: \(stats.mySendsTotal)")
             Text("Nudges received: \(stats.myReceivedTotal)")
             Divider()
-            Button("Send a GIF…") {
+            Button("Choose a GIF…") {
                 DispatchQueue.main.async {
-                    GifPickerWindowController.shared.showWindow()
+                    NudgeDraft.shared.openGIFPicker()
                 }
             }
             Button("Open onboarding…") {
@@ -66,6 +67,10 @@ struct DynamicNotchApp: App {
                 }
             }
             .keyboardShortcut(KeyEquivalent(","), modifiers: .command)
+            Button(updateChecker.isChecking ? "Checking for Updates…" : "Check for Updates…") {
+                Task { await updateChecker.checkForUpdates() }
+            }
+            .disabled(updateChecker.isChecking)
             Button("Quit", role: .destructive) {
                 NSApplication.shared.terminate(self)
             }
@@ -151,6 +156,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let rect = NSRect(x: 0, y: 0, width: windowSize.width, height: windowSize.height)
         let styleMask: NSWindow.StyleMask = [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]
         let window = NudgeSkyLightWindow(contentRect: rect, styleMask: styleMask, backing: .buffered, defer: false)
+        window.notchViewModel = viewModel
         let agentFocusController = AgentPanelFocusController()
         agentFocusController.attach(window: window)
         window.contentView = NSHostingView(

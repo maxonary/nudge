@@ -23,13 +23,11 @@ final class AgentPanelFocusController {
             previousApplication = frontmost
         }
 
-        panel.allowsKeyFocus = true
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKey()
     }
 
     func endTextEntry() {
-        attachedWindow?.allowsKeyFocus = false
         if attachedWindow?.isKeyWindow == true {
             attachedWindow?.resignKey()
         }
