@@ -1,13 +1,35 @@
 import AppKit
 import Foundation
 
-/// The notch's short log of recent agent requests and nudges. In memory only:
-/// it resets when Nudge quits, and nothing is written to disk.
+/// The notch's short log of recent agent requests and nudges. It survives a
+/// restart in a small JSON file; see ActivityLogFile for what is kept.
 @MainActor
 final class ActivityLogStore: ObservableObject {
     static let shared = ActivityLogStore()
 
-    @Published private(set) var log = ActivityLog()
+    @Published private(set) var log: ActivityLog {
+        didSet {
+            guard log != oldValue else { return }
+            do {
+                try file.save(log)
+            } catch {
+                NSLog("Nudge: saving the activity log failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private let file: ActivityLogFile
+
+    init(file: ActivityLogFile = ActivityLogFile(url: ActivityLogStore.defaultURL)) {
+        self.file = file
+        self.log = file.load()
+    }
+
+    nonisolated static var defaultURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Nudge", isDirectory: true)
+            .appendingPathComponent("activity-log.json")
+    }
 
     var entries: [ActivityLogEntry] { log.entries }
 
