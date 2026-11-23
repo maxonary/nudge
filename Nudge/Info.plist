@@ -13,5 +13,7 @@
 	</array>
 	<key>KlipyAPIKey</key>
 	<string>$(KLIPY_API_KEY)</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/maxonary/nudge/releases/latest/download/appcast.xml</string>
 </dict>
 </plist>

@@ -67,10 +67,9 @@ struct DynamicNotchApp: App {
                 }
             }
             .keyboardShortcut(KeyEquivalent(","), modifiers: .command)
-            Button(updateChecker.isChecking ? "Checking for Updates…" : "Check for Updates…") {
-                Task { await updateChecker.checkForUpdates() }
+            Button("Check for Updates…") {
+                updateChecker.checkForUpdates()
             }
-            .disabled(updateChecker.isChecking)
             Button("Quit", role: .destructive) {
                 NSApplication.shared.terminate(self)
             }

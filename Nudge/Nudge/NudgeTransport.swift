@@ -96,7 +96,16 @@ final class NudgeTransport: ObservableObject {
             gif: (gifTrimmed?.isEmpty == false) ? gifTrimmed : nil,
             id: confirmDelivery ? id : nil
         )
-        try await post(payload: payload, to: topic, label: "ping->\(recipient)")
+        do {
+            try await post(payload: payload, to: topic, label: "ping->\(recipient)")
+        } catch {
+            // A lost HTTP response does not mean ntfy failed to publish the ping.
+            // Keep listening for the recipient's receipt before reporting failure.
+            if confirmDelivery, await receipts.wait(id: id) {
+                return true
+            }
+            throw error
+        }
         return confirmDelivery ? await receipts.wait(id: id) : false
     }
 

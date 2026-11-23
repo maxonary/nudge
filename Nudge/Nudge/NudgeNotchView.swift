@@ -257,8 +257,9 @@ struct NudgeNotchView: View {
                         self.draft.isAwaitingReceipt = false
                         self.sending = nil
                         self.sendError = "Sent — receipt not confirmed"
-                        if self.draft.message == outgoing { self.draft.message = "" }
-                        if self.draft.gif == outgoingGif { self.draft.gif = nil }
+                        // Keep the draft available for review, but don't leave
+                        // the notch stuck open after the send attempt finishes.
+                        self.vm.close(force: true)
                     }
                     return
                 }
@@ -275,7 +276,7 @@ struct NudgeNotchView: View {
                 await MainActor.run {
                     self.sending = nil
                     self.draft.isAwaitingReceipt = false
-                    self.sendError = "Send failed"
+                    self.sendError = hasText ? "Delivery uncertain — check before retrying" : "Send failed"
                 }
             }
         }
