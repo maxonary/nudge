@@ -38,9 +38,12 @@ jobs:
             VERSION="${{ github.event.inputs.version }}"
             TAG="v${VERSION}"
           fi
+          BUILD_NUMBER=$((GITHUB_RUN_NUMBER + 1000))
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION} (tag: ${TAG})"
+          echo "Build number: ${BUILD_NUMBER}"
 
       - name: Show Xcode version
         run: xcodebuild -version
@@ -80,6 +83,7 @@ jobs:
       - name: Archive (Developer ID, hardened runtime)
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
           KLIPY_API_KEY: ${{ secrets.KLIPY_API_KEY }}
           SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -101,7 +105,7 @@ jobs:
             ENABLE_HARDENED_RUNTIME=YES \
             OTHER_CODE_SIGN_FLAGS="--timestamp" \
             MARKETING_VERSION="${VERSION}" \
-            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+            CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 
       - name: Locate app
         id: app
@@ -162,6 +166,44 @@ jobs:
             --commit "${GITHUB_SHA}" > "${NOTES_FILE}"
           echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
 
+      - name: Create Sparkle appcast
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          ZIP_NAME: ${{ steps.zip.outputs.zip_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYAPPCAST'
+          import datetime
+          import os
+          import pathlib
+          import xml.etree.ElementTree as ET
+
+          version = os.environ["VERSION"]
+          build = os.environ["BUILD_NUMBER"]
+          zip_name = os.environ["ZIP_NAME"]
+          zip_path = pathlib.Path("dist") / zip_name
+          download = f"https://github.com/maxonary/nudge/releases/download/v{version}/{zip_name}"
+          sparkle = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+          ET.register_namespace("sparkle", sparkle)
+          rss = ET.Element("rss", {"version": "2.0"})
+          channel = ET.SubElement(rss, "channel")
+          ET.SubElement(channel, "title").text = "Nudge Updates"
+          item = ET.SubElement(channel, "item")
+          ET.SubElement(item, "title").text = f"Nudge {version}"
+          ET.SubElement(item, "pubDate").text = datetime.datetime.now(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+          ET.SubElement(item, f"{{{sparkle}}}version").text = build
+          ET.SubElement(item, f"{{{sparkle}}}shortVersionString").text = version
+          ET.SubElement(item, f"{{{sparkle}}}minimumSystemVersion").text = "14.0"
+          ET.SubElement(item, "enclosure", {
+              "url": download,
+              "length": str(zip_path.stat().st_size),
+              "type": "application/octet-stream",
+          })
+          ET.indent(rss, space="  ")
+          ET.ElementTree(rss).write("dist/appcast.xml", encoding="UTF-8", xml_declaration=True)
+          PYAPPCAST
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -182,5 +224,6 @@ jobs:
           gh release create "${TAG}" \
             "dist/${ZIP_NAME}" \
             "dist/${ZIP_NAME}.sha256" \
+            "dist/appcast.xml" \
             --title "Nudge ${VERSION}" \
             --notes-file "${NOTES_FILE}"

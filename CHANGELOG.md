@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Install signed, notarized updates directly from Check for Updates using Sparkle.
+
 ## 0.5.2 — 2026-11-02
 
 ### Added
