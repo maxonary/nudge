@@ -16,7 +16,15 @@ let shadowPadding: CGFloat = 20
 let openNotchSize: CGSize = .init(width: 640, height: 190)
 let gifDraftExtraHeight: CGFloat = 88
 let gifPickerExtraHeight: CGFloat = 440
-let windowSize: CGSize = .init(width: openNotchSize.width, height: openNotchSize.height + gifDraftExtraHeight + gifPickerExtraHeight + shadowPadding)
+// The agent panel replaces the send view and sizes the notch to its measured
+// content: the physical notch, plus the paddings around NudgeNotchView
+// (top 4, bottom 8) and NotchLayout's bottom 12, plus the panel itself.
+let agentAttentionChromeHeight: CGFloat = 24
+let agentAttentionMaxHeight: CGFloat = 420
+// Room for the four-entry activity log under the send view, its newest
+// entry shown large (8 + 6 + 76 + 3 × 32).
+let activityLogMaxHeight: CGFloat = 186
+let windowSize: CGSize = .init(width: openNotchSize.width, height: max(openNotchSize.height + gifDraftExtraHeight + activityLogMaxHeight, agentAttentionMaxHeight) + gifPickerExtraHeight + shadowPadding)
 let cornerRadiusInsets: (opened: (top: CGFloat, bottom: CGFloat), closed: (top: CGFloat, bottom: CGFloat)) = (opened: (top: 19, bottom: 24), closed: (top: 6, bottom: 14))
 
 enum MusicPlayerImageSizes {

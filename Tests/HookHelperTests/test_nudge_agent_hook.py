@@ -1,0 +1,836 @@
+import importlib.util
+import json
+import os
+from pathlib import Path
+import socket
+import stat
+import subprocess
+import tempfile
+import threading
+import time
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+HELPER = ROOT / "Nudge" / "AgentAttention" / "Resources" / "nudge_agent_hook.py"
+
+
+def claude_stop_fixture():
+    return {
+        "session_id": "claude-session",
+        "prompt_id": "prompt-7",
+        "cwd": "/work/atlas",
+        "hook_event_name": "Stop",
+        "last_assistant_message": "Implemented the bridge.",
+    }
+
+
+def claude_stop_without_prompt_id_fixture():
+    return {
+        "session_id": "legacy-claude-session",
+        "transcript_path": "/Users/max/.claude/projects/atlas/session.jsonl",
+        "cwd": "/work/atlas",
+        "hook_event_name": "Stop",
+        "stop_hook_active": False,
+        "last_assistant_message": "Legacy Claude completion.",
+    }
+
+
+def codex_stop_fixture():
+    return {
+        "session_id": "codex-session",
+        "turn_id": "turn-9",
+        "cwd": "/work/atlas",
+        "hook_event_name": "Stop",
+        "last_assistant_message": "Tests pass.",
+    }
+
+
+def claude_question_fixture():
+    return {
+        "session_id": "claude-session",
+        "cwd": "/work/atlas",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "AskUserQuestion",
+        "tool_use_id": "toolu-question",
+        "tool_input": {
+            "questions": [
+                {
+                    "question": "Which release track?",
+                    "header": "Release",
+                    "options": [
+                        {"label": "Stable", "description": "Ship the proven build"},
+                        {"label": "Beta", "description": "Ship the preview build"},
+                    ],
+                    "multiSelect": False,
+                },
+                {
+                    "question": "Which checks?",
+                    "header": "Checks",
+                    "options": [{"label": "Tests", "description": "Run tests"}],
+                    "multiSelect": True,
+                },
+            ]
+        },
+    }
+
+
+def claude_approval_fixture(with_suggestion=True):
+    event = {
+        "session_id": "claude-session",
+        "cwd": "/work/atlas",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_input": {
+            "command": "npm test",
+            "description": "Run the test suite",
+        },
+    }
+    if with_suggestion:
+        event["permission_suggestions"] = [
+            {
+                "type": "addRules",
+                "rules": [{"toolName": "Bash", "ruleContent": "npm test"}],
+                "behavior": "allow",
+                "destination": "localSettings",
+            },
+            {
+                "type": "addRules",
+                "rules": [{"toolName": "Bash"}],
+                "behavior": "deny",
+                "destination": "userSettings",
+            },
+        ]
+    return event
+
+
+def codex_approval_fixture():
+    return {
+        "session_id": "codex-session",
+        "turn_id": "turn-9",
+        "cwd": "/work/atlas",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Bash",
+        "tool_use_id": "call-3",
+        "tool_input": {
+            "command": "git push",
+            "description": "Publish the branch",
+        },
+    }
+
+
+class HookHelperTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("nudge_agent_hook", HELPER)
+        cls.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+
+    def test_claude_stop_normalizes_to_completion(self):
+        envelope = self.module.normalize_event("claude", claude_stop_fixture(), {})
+
+        self.assertEqual(envelope["protocolVersion"], 1)
+        self.assertEqual(envelope["source"], "claudeCode")
+        self.assertEqual(envelope["cwd"], "/work/atlas")
+        self.assertEqual(envelope["project"], "atlas")
+        self.assertEqual(envelope["event"], {
+            "type": "completion",
+            "payload": {
+                "id": "claudeCode:claude-session:prompt-7",
+                "source": "claudeCode",
+                "context": "/work/atlas",
+                "title": "Claude Code finished",
+                "message": "Implemented the bridge.",
+            },
+        })
+
+    def test_claude_stop_without_prompt_id_uses_deterministic_legacy_id(self):
+        event = claude_stop_without_prompt_id_fixture()
+
+        first = self.module.normalize_event("claude", event, {})
+        second = self.module.normalize_event("claude", event, {})
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertEqual(
+            first["event"]["payload"]["id"],
+            "claudeCode:legacy-claude-session:9981e90f59ef",
+        )
+        self.assertEqual(second["event"]["payload"]["id"], first["event"]["payload"]["id"])
+
+    def test_codex_stop_normalizes_to_completion(self):
+        envelope = self.module.normalize_event("codex", codex_stop_fixture(), {})
+
+        self.assertEqual(envelope["source"], "codex")
+        self.assertEqual(envelope["event"], {
+            "type": "completion",
+            "payload": {
+                "id": "codex:codex-session:turn-9",
+                "source": "codex",
+                "context": "/work/atlas",
+                "title": "Codex finished",
+                "message": "Tests pass.",
+            },
+        })
+
+    def test_claude_question_preserves_prompt_choices_and_flags(self):
+        envelope = self.module.normalize_event("claude", claude_question_fixture(), {})
+
+        self.assertEqual(envelope["event"], {
+            "type": "question",
+            "payload": {
+                "id": "toolu-question",
+                "header": "Release",
+                "questions": [
+                    {
+                        "id": "toolu-question:0",
+                        "prompt": "Which release track?",
+                        "choices": [
+                            {"label": "Stable", "description": "Ship the proven build"},
+                            {"label": "Beta", "description": "Ship the preview build"},
+                        ],
+                        "multiSelect": False,
+                        "allowsFreeform": True,
+                    },
+                    {
+                        "id": "toolu-question:1",
+                        "prompt": "Which checks?",
+                        "choices": [{"label": "Tests", "description": "Run tests"}],
+                        "multiSelect": True,
+                        "allowsFreeform": True,
+                    },
+                ],
+            },
+        })
+
+    def test_duplicate_claude_question_prompts_handoff_before_connecting(self):
+        event = claude_question_fixture()
+        event["tool_input"]["questions"][1]["question"] = "Which release track?"
+
+        self.assertIsNone(self.module.normalize_event("claude", event, {}))
+
+    def test_only_claude_ask_user_question_is_normalized(self):
+        event = claude_question_fixture()
+        event["tool_name"] = "Bash"
+
+        self.assertIsNone(self.module.normalize_event("claude", event, {}))
+
+    def test_claude_approval_contains_context_and_session_capability(self):
+        envelope = self.module.normalize_event("claude", claude_approval_fixture(), {})
+        approval = envelope["event"]["payload"]
+
+        self.assertEqual(envelope["event"]["type"], "approval")
+        self.assertEqual(approval["source"], "claudeCode")
+        self.assertEqual(approval["toolName"], "Bash")
+        self.assertEqual(approval["detail"], "Run the test suite")
+        self.assertEqual(approval["command"], "npm test")
+        self.assertEqual(approval["cwd"], "/work/atlas")
+        self.assertTrue(approval["allowsClaudeSessionRule"])
+        self.assertRegex(approval["id"], r"^[0-9a-f-]{36}$")
+
+    def test_codex_approval_uses_tool_id_and_never_allows_session_rule(self):
+        approval = self.module.normalize_event(
+            "codex", codex_approval_fixture(), {}
+        )["event"]["payload"]
+
+        self.assertEqual(approval, {
+            "id": "call-3",
+            "source": "codex",
+            "toolName": "Bash",
+            "detail": "Publish the branch",
+            "command": "git push",
+            "cwd": "/work/atlas",
+            "allowsClaudeSessionRule": False,
+        })
+
+    def permission_request(self, tool_name, tool_input, source="claude"):
+        event = {
+            "session_id": "session",
+            "cwd": "/work/app",
+            "hook_event_name": "PermissionRequest",
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+        }
+        return self.module.normalize_event(source, event, {})
+
+    def test_write_approvals_for_different_files_are_distinguishable(self):
+        readme = self.permission_request(
+            "Write", {"file_path": "/work/app/README.md", "content": "hello"}
+        )
+        keys = self.permission_request(
+            "Write", {"file_path": "~/.ssh/authorized_keys", "content": "hello"}
+        )
+
+        readme_summary = readme["event"]["payload"]["inputSummary"]
+        keys_summary = keys["event"]["payload"]["inputSummary"]
+        self.assertTrue(readme_summary.startswith("file_path: /work/app/README.md"))
+        self.assertTrue(keys_summary.startswith("file_path: ~/.ssh/authorized_keys"))
+        self.assertNotEqual(readme["event"]["payload"], keys["event"]["payload"])
+        self.assertNotIn("command", readme["event"]["payload"])
+
+    def test_edit_summary_lists_path_first_and_collapses_whitespace(self):
+        approval = self.permission_request("Edit", {
+            "old_string": "def old():\n    return 1\n",
+            "new_string": "def new():\n\treturn 2\n",
+            "file_path": "/work/app/main.py",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "file_path: /work/app/main.py",
+            "old_string: def old(): return 1",
+            "new_string: def new(): return 2",
+        ])
+
+    def test_summary_puts_path_like_keys_first_in_fixed_order(self):
+        approval = self.permission_request("Fetch", {
+            "timeout": 30,
+            "url": "https://example.com",
+            "path": "/tmp/out",
+            "notebook_path": "/work/app/n.ipynb",
+            "file_path": "/work/app/a.txt",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "file_path: /work/app/a.txt",
+            "notebook_path: /work/app/n.ipynb",
+            "path: /tmp/out",
+            "url: https://example.com",
+            "timeout: 30",
+        ])
+
+    def test_mcp_tool_summary_renders_lists_as_compact_json(self):
+        approval = self.permission_request("mcp__github__create_issue", {
+            "owner": "arvana",
+            "repo": "nudge",
+            "title": "Crash on launch",
+            "labels": ["bug", "p1"],
+        })["event"]["payload"]
+
+        self.assertEqual(approval["toolName"], "mcp__github__create_issue")
+        self.assertEqual(approval["detail"], "mcp__github__create_issue")
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "owner: arvana",
+            "repo: nudge",
+            "title: Crash on launch",
+            'labels: ["bug","p1"]',
+        ])
+
+    def test_summary_renders_other_values_as_compact_json(self):
+        approval = self.permission_request("Custom", {
+            "draft": False,
+            "retries": 3,
+            "milestone": None,
+            "meta": {"a": 1, "b": "ä"},
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "draft: false",
+            "retries: 3",
+            "milestone: null",
+            'meta: {"a":1,"b":"ä"}',
+        ])
+
+    def test_summary_truncates_long_values_to_160_characters(self):
+        approval = self.permission_request("Write", {
+            "file_path": "/work/app/a.txt",
+            "content": "x" * 500,
+            "list": ["y" * 500],
+        })["event"]["payload"]
+
+        lines = approval["inputSummary"].split("\n")
+        self.assertEqual(lines[0], "file_path: /work/app/a.txt")
+        content_value = lines[1][len("content: "):]
+        self.assertEqual(content_value, "x" * 159 + "…")
+        self.assertEqual(len(content_value), 160)
+        list_value = lines[2][len("list: "):]
+        self.assertEqual(len(list_value), 160)
+        self.assertTrue(list_value.endswith("…"))
+
+    def test_value_of_exactly_160_characters_is_not_truncated(self):
+        approval = self.permission_request(
+            "Write", {"content": "x" * 160}
+        )["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"], "content: " + "x" * 160)
+
+    def test_summary_caps_at_six_lines_and_counts_omitted_keys(self):
+        approval = self.permission_request(
+            "Custom", {f"key{i}": f"value{i}" for i in range(9)}
+        )["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "key0: value0",
+            "key1: value1",
+            "key2: value2",
+            "key3: value3",
+            "key4: value4",
+            "key5: value5",
+            "… +3 weitere",
+        ])
+
+    def test_exactly_six_keys_have_no_overflow_line(self):
+        approval = self.permission_request(
+            "Custom", {f"key{i}": i for i in range(6)}
+        )["event"]["payload"]
+
+        self.assertEqual(len(approval["inputSummary"].split("\n")), 6)
+        self.assertNotIn("weitere", approval["inputSummary"])
+
+    def test_shell_approval_keeps_command_and_adds_no_summary(self):
+        approval = self.permission_request("Bash", {
+            "command": "npm test",
+            "description": "Run the test suite",
+            "timeout": 60000,
+        })["event"]["payload"]
+
+        self.assertNotIn("inputSummary", approval)
+        self.assertEqual(approval["command"], "npm test")
+        self.assertEqual(approval["detail"], "Run the test suite")
+
+    def test_description_only_or_empty_input_adds_no_summary(self):
+        for tool_input in ({"description": "Do the thing"}, {}, None):
+            with self.subTest(tool_input=tool_input):
+                approval = self.permission_request(
+                    "Write", tool_input
+                )["event"]["payload"]
+
+                self.assertNotIn("inputSummary", approval)
+
+    def test_description_stays_the_detail_and_out_of_the_summary(self):
+        approval = self.permission_request("Write", {
+            "description": "Save the readme",
+            "file_path": "/work/app/README.md",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["detail"], "Save the readme")
+        self.assertEqual(approval["inputSummary"], "file_path: /work/app/README.md")
+
+    def test_long_paths_are_cut_in_the_middle_so_the_filename_survives(self):
+        shared = "/Users/me/projects/app/node_modules/.pnpm/" + "a" * 128
+        self.assertEqual(len(shared), 170)
+        harmless = shared + "/index.js"
+        hostile = shared + "/../../.ssh/authorized_keys"
+
+        harmless_line = self.permission_request(
+            "Write", {"file_path": harmless}
+        )["event"]["payload"]["inputSummary"]
+        hostile_line = self.permission_request(
+            "Write", {"file_path": hostile}
+        )["event"]["payload"]["inputSummary"]
+
+        self.assertNotEqual(harmless_line, hostile_line)
+        self.assertTrue(harmless_line.endswith("/index.js"))
+        self.assertTrue(hostile_line.endswith("/../../.ssh/authorized_keys"))
+        for line, path in ((harmless_line, harmless), (hostile_line, hostile)):
+            value = line[len("file_path: "):]
+            self.assertEqual(len(value), 160)
+            self.assertEqual(value[:50], path[:50])
+            self.assertEqual(value[50], "…")
+            self.assertEqual(value[51:], path[-109:])
+
+    def test_every_leading_path_key_is_cut_in_the_middle(self):
+        for key in ("file_path", "notebook_path", "path", "url"):
+            with self.subTest(key=key):
+                value = "head-" + "m" * 300 + "-tail"
+                approval = self.permission_request(
+                    "Custom", {key: value}
+                )["event"]["payload"]
+
+                text = approval["inputSummary"][len(f"{key}: "):]
+                self.assertEqual(len(text), 160)
+                self.assertTrue(text.startswith("head-"))
+                self.assertTrue(text.endswith("-tail"))
+                self.assertEqual(text[50], "…")
+
+    def test_other_keys_keep_end_truncation(self):
+        value = "head-" + "m" * 300 + "-tail"
+        approval = self.permission_request(
+            "Custom", {"old_string": value}
+        )["event"]["payload"]
+
+        text = approval["inputSummary"][len("old_string: "):]
+        self.assertEqual(text, value[:159] + "…")
+
+    def test_short_paths_are_not_cut(self):
+        path = "/work/" + "d" * 150
+        self.assertEqual(len(path), 156)
+        approval = self.permission_request(
+            "Write", {"file_path": path}
+        )["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"], f"file_path: {path}")
+
+    def test_argument_names_are_cleaned_like_values(self):
+        approval = self.permission_request(
+            "Custom", {"bad\nkey \t name": "value", "ok": "fine"}
+        )["event"]["payload"]
+
+        self.assertEqual(
+            approval["inputSummary"].split("\n"),
+            ["bad key name: value", "ok: fine"],
+        )
+
+    def test_mcp_tool_with_command_argument_shows_every_argument(self):
+        approval = self.permission_request("mcp__ssh__exec", {
+            "host": "prod-db-1",
+            "command": "rm -rf /var/lib/postgresql",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "host: prod-db-1",
+            "command: rm -rf /var/lib/postgresql",
+        ])
+        self.assertNotIn("command", approval)
+        self.assertEqual(approval["detail"], "mcp__ssh__exec")
+
+    def test_non_shell_detail_never_carries_the_command_text(self):
+        for tool_input, expected_detail in (
+            ({"host": "prod-db-1", "command": "rm -rf /data"}, "mcp__ssh__exec"),
+            (
+                {"host": "prod-db-1", "command": "rm -rf /data", "description": "Wipe it"},
+                "Wipe it",
+            ),
+            ({"command": "rm -rf /data"}, "mcp__ssh__exec"),
+        ):
+            with self.subTest(tool_input=tool_input):
+                approval = self.permission_request(
+                    "mcp__ssh__exec", tool_input
+                )["event"]["payload"]
+
+                self.assertEqual(approval["detail"], expected_detail)
+                self.assertNotIn("command", approval)
+                self.assertIn("command: rm -rf /data", approval["inputSummary"])
+
+    def test_non_shell_command_is_an_ordinary_key_in_normal_order(self):
+        approval = self.permission_request("mcp__ssh__exec", {
+            "command": "uptime",
+            "host": "prod-db-1",
+            "file_path": "/tmp/out.log",
+        })["event"]["payload"]
+
+        self.assertEqual(approval["inputSummary"].split("\n"), [
+            "file_path: /tmp/out.log",
+            "command: uptime",
+            "host: prod-db-1",
+        ])
+
+    def test_non_shell_command_uses_end_truncation(self):
+        value = "start-" + "c" * 300 + "-end"
+        approval = self.permission_request(
+            "mcp__ssh__exec", {"command": value}
+        )["event"]["payload"]
+
+        self.assertEqual(
+            approval["inputSummary"], "command: " + value[:159] + "…"
+        )
+
+    def test_apply_patch_keeps_the_shell_behaviour(self):
+        approval = self.permission_request("apply_patch", {
+            "command": "*** Begin Patch\n*** End Patch",
+            "description": "Patch the readme",
+            "workdir": "/work/app",
+        }, source="codex")["event"]["payload"]
+
+        self.assertEqual(approval["command"], "*** Begin Patch\n*** End Patch")
+        self.assertEqual(approval["detail"], "Patch the readme")
+        self.assertNotIn("inputSummary", approval)
+
+        bare = self.permission_request("apply_patch", {
+            "command": "*** Begin Patch\n*** End Patch",
+        }, source="codex")["event"]["payload"]
+        self.assertEqual(bare["detail"], "*** Begin Patch\n*** End Patch")
+
+    def test_host_mapping_and_terminal_session_ids(self):
+        cases = [
+            ("WarpTerminal", "Warp", "dev.warp.Warp-Stable"),
+            ("Apple_Terminal", "Terminal", "com.apple.Terminal"),
+            ("iTerm.app", "iTerm", "com.googlecode.iterm2"),
+            ("vscode", "Visual Studio Code", "com.microsoft.VSCode"),
+            ("Ghostty", "Ghostty", None),
+        ]
+
+        for term_program, app_name, bundle_id in cases:
+            with self.subTest(term_program=term_program):
+                host = self.module.host_from_environment({
+                    "TERM_PROGRAM": term_program,
+                    "TERM_SESSION_ID": "term-session",
+                    "ITERM_SESSION_ID": "iterm-session",
+                })
+                self.assertEqual(host, {
+                    "appName": app_name,
+                    "bundleID": bundle_id,
+                    "terminalSessionID": "term-session",
+                })
+
+        host = self.module.host_from_environment({
+            "TERM_PROGRAM": "iTerm.app", "ITERM_SESSION_ID": "fallback-session"
+        })
+        self.assertEqual(host["terminalSessionID"], "fallback-session")
+
+    def test_host_without_known_term_program_uses_launching_app_bundle_id(self):
+        conductor = self.module.host_from_environment({
+            "__CFBundleIdentifier": "com.conductor.app",
+        })
+        self.assertEqual(conductor, {
+            "appName": "Conductor",
+            "bundleID": "com.conductor.app",
+            "terminalSessionID": None,
+        })
+
+        ghostty = self.module.host_from_environment({
+            "TERM_PROGRAM": "ghostty",
+            "__CFBundleIdentifier": "com.mitchellh.ghostty",
+        })
+        self.assertEqual(ghostty["appName"], "ghostty")
+        self.assertEqual(ghostty["bundleID"], "com.mitchellh.ghostty")
+
+        known = self.module.host_from_environment({
+            "TERM_PROGRAM": "vscode",
+            "__CFBundleIdentifier": "com.microsoft.VSCode",
+        })
+        self.assertEqual(known["appName"], "Visual Studio Code")
+        self.assertEqual(known["bundleID"], "com.microsoft.VSCode")
+
+    def test_claude_question_answer_preserves_questions(self):
+        event = claude_question_fixture()
+        output = self.module.output_for_response("claude", event, {
+            "kind": "answered", "answers": {"Which release track?": "Stable"}
+        })
+
+        specific = output["hookSpecificOutput"]
+        self.assertEqual(specific["hookEventName"], "PreToolUse")
+        self.assertEqual(specific["permissionDecision"], "allow")
+        self.assertEqual(specific["updatedInput"]["questions"], event["tool_input"]["questions"])
+        self.assertEqual(specific["updatedInput"]["answers"], {"Which release track?": "Stable"})
+
+    def test_claude_approval_once_uses_official_allow_shape(self):
+        output = self.module.output_for_response(
+            "claude", claude_approval_fixture(), {"kind": "approvedOnce"}
+        )
+
+        self.assertEqual(output, {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {"behavior": "allow"},
+            }
+        })
+
+    def test_claude_session_approval_copies_first_allow_suggestion_to_session(self):
+        event = claude_approval_fixture()
+        output = self.module.output_for_response(
+            "claude", event, {"kind": "approvedForSession"}
+        )
+
+        self.assertEqual(output, {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {
+                    "behavior": "allow",
+                    "updatedPermissions": [{
+                        "type": "addRules",
+                        "rules": [{"toolName": "Bash", "ruleContent": "npm test"}],
+                        "behavior": "allow",
+                        "destination": "session",
+                    }],
+                },
+            }
+        })
+        self.assertEqual(event["permission_suggestions"][0]["destination"], "localSettings")
+
+    def test_claude_session_approval_without_compatible_rule_hands_off(self):
+        event = claude_approval_fixture(with_suggestion=False)
+
+        self.assertEqual(
+            self.module.output_for_response("claude", event, {"kind": "approvedForSession"}),
+            {},
+        )
+
+    def test_claude_denial_is_non_interrupting_and_has_message(self):
+        output = self.module.output_for_response(
+            "claude", claude_approval_fixture(), {"kind": "denied"}
+        )
+
+        decision = output["hookSpecificOutput"]["decision"]
+        self.assertEqual(decision["behavior"], "deny")
+        self.assertEqual(decision["interrupt"], False)
+        self.assertTrue(decision["message"])
+
+    def test_codex_approval_and_denial_use_only_supported_fields(self):
+        approved = self.module.output_for_response(
+            "codex", codex_approval_fixture(), {"kind": "approvedOnce"}
+        )
+        denied = self.module.output_for_response(
+            "codex", codex_approval_fixture(), {"kind": "denied"}
+        )
+
+        self.assertEqual(approved, {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {"behavior": "allow"},
+            }
+        })
+        self.assertEqual(denied["hookSpecificOutput"]["decision"]["behavior"], "deny")
+        self.assertTrue(denied["hookSpecificOutput"]["decision"]["message"])
+        self.assertNotIn("interrupt", denied["hookSpecificOutput"]["decision"])
+
+    def test_codex_session_approval_and_handoff_return_empty_object(self):
+        event = codex_approval_fixture()
+
+        self.assertEqual(
+            self.module.output_for_response("codex", event, {"kind": "approvedForSession"}),
+            {},
+        )
+        self.assertEqual(
+            self.module.output_for_response("codex", event, {"kind": "handoff"}),
+            {},
+        )
+
+    def test_missing_socket_returns_empty_object_and_exit_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_helper(
+                "claude",
+                claude_approval_fixture(),
+                Path(directory) / "missing.sock",
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout), {})
+        self.assertEqual(result.stderr, "")
+
+    def test_socket_path_requires_private_parent_and_owner_only_socket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            socket_path = Path(directory) / "bridge.sock"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(socket_path))
+                socket_path.chmod(0o600)
+                environment = {"NUDGE_AGENT_SOCKET_PATH": str(socket_path)}
+
+                self.assertEqual(self.module._socket_path(environment), str(socket_path))
+
+                Path(directory).chmod(0o755)
+                self.assertIsNone(self.module._socket_path(environment))
+                Path(directory).chmod(0o700)
+
+                socket_path.chmod(0o660)
+                self.assertIsNone(self.module._socket_path(environment))
+
+    def test_socket_path_rejects_relative_and_symlinked_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_directory = Path(directory) / "runtime"
+            runtime_directory.mkdir(mode=0o700)
+            socket_path = runtime_directory / "bridge.sock"
+            socket_alias = runtime_directory / "bridge-alias.sock"
+            directory_alias = Path(directory) / "runtime-alias"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(str(socket_path))
+                socket_path.chmod(0o600)
+                socket_alias.symlink_to(socket_path)
+                directory_alias.symlink_to(runtime_directory, target_is_directory=True)
+
+                self.assertIsNone(self.module._socket_path({
+                    "NUDGE_AGENT_SOCKET_PATH": "relative.sock"
+                }))
+                self.assertIsNone(self.module._socket_path({
+                    "NUDGE_AGENT_SOCKET_PATH": str(socket_alias)
+                }))
+                self.assertIsNone(self.module._socket_path({
+                    "NUDGE_AGENT_SOCKET_PATH": str(directory_alias / "bridge.sock")
+                }))
+
+    def test_completion_sends_once_and_does_not_wait_for_response(self):
+        with tempfile.TemporaryDirectory() as directory:
+            socket_path = Path(directory) / "bridge.sock"
+            received = []
+            release = threading.Event()
+
+            def server():
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                    listener.bind(str(socket_path))
+                    socket_path.chmod(0o600)
+                    listener.listen(1)
+                    with listener.accept()[0] as connection:
+                        received.append(self.read_line(connection))
+                        release.wait(2)
+
+            thread = threading.Thread(target=server)
+            thread.start()
+            self.wait_for_path(socket_path)
+            started = time.monotonic()
+            result = self.run_helper("codex", codex_stop_fixture(), socket_path)
+            elapsed = time.monotonic() - started
+            release.set()
+            thread.join(3)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout), {})
+        self.assertLess(elapsed, 1)
+        self.assertEqual(len(received), 1)
+        self.assertEqual(json.loads(received[0])["event"]["type"], "completion")
+
+    def test_protocol_error_disconnect_and_busy_handoff_fail_open(self):
+        replies = [b"not json\n", b"", b'{"kind":"handoff"}\n']
+        for reply in replies:
+            with self.subTest(reply=reply):
+                with tempfile.TemporaryDirectory() as directory:
+                    socket_path = Path(directory) / "bridge.sock"
+
+                    def server():
+                        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                            listener.bind(str(socket_path))
+                            socket_path.chmod(0o600)
+                            listener.listen(1)
+                            with listener.accept()[0] as connection:
+                                self.read_line(connection)
+                                if reply:
+                                    connection.sendall(reply)
+
+                    thread = threading.Thread(target=server)
+                    thread.start()
+                    self.wait_for_path(socket_path)
+                    result = self.run_helper("codex", codex_approval_fixture(), socket_path)
+                    thread.join(3)
+
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(json.loads(result.stdout), {})
+
+    @staticmethod
+    def read_line(connection):
+        chunks = []
+        while True:
+            chunk = connection.recv(4096)
+            if not chunk:
+                return b"".join(chunks).decode()
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                return b"".join(chunks).split(b"\n", 1)[0].decode()
+
+    @staticmethod
+    def wait_for_path(path):
+        deadline = time.monotonic() + 2
+        while True:
+            try:
+                metadata = path.lstat()
+                if stat.S_ISSOCK(metadata.st_mode) and stat.S_IMODE(metadata.st_mode) == 0o600:
+                    return
+            except FileNotFoundError:
+                pass
+            if time.monotonic() >= deadline:
+                raise AssertionError(f"secure socket was not created: {path}")
+            time.sleep(0.005)
+
+    @staticmethod
+    def run_helper(source, event, socket_path):
+        environment = os.environ.copy()
+        environment["NUDGE_AGENT_SOCKET_PATH"] = str(socket_path)
+        return subprocess.run(
+            ["python3", str(HELPER), source],
+            input=json.dumps(event),
+            text=True,
+            capture_output=True,
+            timeout=3,
+            env=environment,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
