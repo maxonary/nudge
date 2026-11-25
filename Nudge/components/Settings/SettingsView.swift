@@ -49,6 +49,8 @@ struct NudgeSettingsPane: View {
     @ObservedObject var teamSecret = NudgeTeamSecret.shared
     @ObservedObject var stats = NudgeStats.shared
     @ObservedObject var roster = NudgeRoster.shared
+    @ObservedObject var connectorManager = AgentConnectorManager.shared
+    @ObservedObject var agentAttention = AgentAttentionCenter.shared
     @Default(.nudgePlaySoundOnReceive) var playSoundOnReceive
     @Default(.nudgeShowBackupNotification) var showBackupNotification
     @Default(.klipyApiKey) var klipyApiKey
@@ -248,6 +250,17 @@ struct NudgeSettingsPane: View {
             }
 
             Section {
+                agentConnectorRow(.claudeCode)
+                agentConnectorRow(.codex)
+            } header: {
+                Text("Agent-Integrationen")
+            } footer: {
+                Text("Verbindungen gelten für deinen macOS-Benutzer. Trennen entfernt nur die von Nudge registrierten Hooks und Plugins.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 SecureField("Klipy API key", text: $klipyApiKey)
                     .textFieldStyle(.roundedBorder)
             } header: {
@@ -277,6 +290,146 @@ struct NudgeSettingsPane: View {
         .onChange(of: identity.current) { _, newValue in
             nameDraft = newValue ?? ""
         }
+        .onAppear {
+            connectorManager.refresh()
+        }
+    }
+
+    private func agentConnectorRow(_ source: AgentSource) -> some View {
+        let status = connectorManager.status(for: source)
+        let mutation = connectorManager.mutation(for: source)
+        let requiresManualRepair = connectorManager.requiresManualConnectorRepair(
+            for: source
+        )
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 9) {
+                Image(systemName: connectorIcon(for: source))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18)
+
+                Text(connectorName(for: source))
+                    .fontWeight(.medium)
+
+                Spacer()
+
+                connectorStatusView(status)
+
+                if requiresManualRepair {
+                    Text("Manuell prüfen")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button(connectorActionTitle(for: status, mutation: mutation)) {
+                        performConnectorMutation(mutation, source: source)
+                    }
+                    .disabled(status == .installing)
+                }
+
+                Button("Demo anzeigen") {
+                    _ = agentAttention.showDemo(source: source)
+                }
+                .disabled(agentAttention.state.activeRequest != nil)
+            }
+
+            if let help = connectorHelp(for: source, status: status) {
+                Text(help)
+                    .font(.caption)
+                    .foregroundStyle(status.isFailure ? Color.red : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func connectorStatusView(_ status: AgentConnectorStatus) -> some View {
+        switch status {
+        case .notInstalled:
+            Label("Nicht verbunden", systemImage: "circle")
+                .foregroundStyle(.secondary)
+        case .installing:
+            HStack(spacing: 5) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Wird eingerichtet")
+            }
+            .foregroundStyle(.secondary)
+        case .needsTrust:
+            Label("Installiert", systemImage: "checkmark.circle")
+                .foregroundStyle(.orange)
+        case .connected:
+            Label("Bereit", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failed:
+            Label("Fehler", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func connectorName(for source: AgentSource) -> String {
+        source == .claudeCode ? "Claude Code" : "Codex"
+    }
+
+    private func connectorIcon(for source: AgentSource) -> String {
+        source == .claudeCode ? "sparkles" : "terminal"
+    }
+
+    private func connectorActionTitle(
+        for status: AgentConnectorStatus,
+        mutation: AgentConnectorMutation
+    ) -> String {
+        switch status {
+        case .connected, .needsTrust:
+            return "Trennen"
+        case .notInstalled:
+            return "Verbinden"
+        case .installing:
+            return "Bitte warten"
+        case .failed:
+            return mutation == .disconnect
+                ? "Trennung fortsetzen"
+                : "Erneut verbinden"
+        }
+    }
+
+    private func performConnectorMutation(
+        _ mutation: AgentConnectorMutation,
+        source: AgentSource
+    ) {
+        Task {
+            switch mutation {
+            case .connect:
+                await connectorManager.connect(source)
+            case .disconnect:
+                await connectorManager.disconnect(source)
+            }
+        }
+    }
+
+    private func connectorHelp(
+        for source: AgentSource,
+        status: AgentConnectorStatus
+    ) -> String? {
+        if case let .failed(message) = status {
+            return message
+        }
+
+        switch (source, status) {
+        case (.claudeCode, .connected):
+            return "Auf Benutzerebene bereit. In laufenden Sessions /reload-plugins ausführen; Workspace-Regeln können Plugins separat deaktivieren."
+        case (.claudeCode, .notInstalled):
+            return "Installiert das lokale Nudge-Plugin für deinen Benutzer."
+        case (.codex, .notInstalled):
+            return "Installiert einen lokalen Hook. Danach einmal mit /hooks prüfen und vertrauen."
+        case (.codex, .needsTrust), (.codex, .connected):
+            return "\(AgentConnectorManager.codexTrustInstruction). Nudge kann den finalen Trust-Status nicht auslesen."
+        case (_, .installing):
+            return "Die lokale Integration wird eingerichtet."
+        default:
+            return nil
+        }
     }
 
     private func copyTeamPassword() {
@@ -302,6 +455,15 @@ struct NudgeSettingsPane: View {
     }
 }
 
+private extension AgentConnectorStatus {
+    var isFailure: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+}
+
+#if DEBUG
 #Preview {
     SettingsView()
 }
+#endif

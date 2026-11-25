@@ -12,11 +12,18 @@ struct NudgeNotchView: View {
     @ObservedObject var teamSecret: NudgeTeamSecret = .shared
     @ObservedObject var draft = NudgeDraft.shared
     @ObservedObject var roster: NudgeRoster = .shared
+    @ObservedObject var agentAttention: AgentAttentionCenter = .shared
     @EnvironmentObject var vm: NudgeViewModel
+
+    let agentFocusController: AgentPanelFocusController
 
     @State private var sending: String?
     @State private var sendError: String?
     @FocusState private var messageFocused: Bool
+
+    init(agentFocusController: AgentPanelFocusController = AgentPanelFocusController()) {
+        self.agentFocusController = agentFocusController
+    }
 
     private var others: [String] {
         roster.others(excluding: identity.current)
@@ -25,7 +32,12 @@ struct NudgeNotchView: View {
     var body: some View {
         VStack(spacing: 8) {
             Group {
-                if let ping = transport.lastIncoming, isRecent(ping), !draft.isShowingSentConfirmation, !draft.isAwaitingReceipt, !draft.isPickingGIF {
+                if agentAttention.hasVisibleAgentContent {
+                    AgentAttentionView(
+                        center: agentAttention,
+                        focusController: agentFocusController
+                    )
+                } else if let ping = transport.lastIncoming, isRecent(ping), !draft.isShowingSentConfirmation, !draft.isAwaitingReceipt, !draft.isPickingGIF {
                     incomingView(for: ping)
                 } else {
                     sendView

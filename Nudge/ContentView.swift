@@ -14,6 +14,9 @@ struct ContentView: View {
     @ObservedObject var coordinator = NudgeViewCoordinator.shared
     @ObservedObject var transport = NudgeTransport.shared
     @ObservedObject var draft = NudgeDraft.shared
+    @ObservedObject var agentAttention = AgentAttentionCenter.shared
+
+    private let agentFocusController: AgentPanelFocusController
 
     @State private var hoverTask: Task<Void, Never>?
     @State private var autoCloseTask: Task<Void, Never>?
@@ -22,6 +25,10 @@ struct ContentView: View {
     @State private var haptics: Bool = false
 
     private let animationSpring = Animation.interactiveSpring(response: 0.38, dampingFraction: 0.8, blendDuration: 0)
+
+    init(agentFocusController: AgentPanelFocusController = AgentPanelFocusController()) {
+        self.agentFocusController = agentFocusController
+    }
 
     private var topCornerRadius: CGFloat {
         ((vm.notchState == .open) && Defaults[.cornerRadiusScaling])
@@ -127,6 +134,14 @@ struct ContentView: View {
         .onChange(of: transport.lastIncoming) { _, ping in
             handleIncoming(ping)
         }
+        .onChange(of: agentAttention.hasVisibleAgentContent) { _, isVisible in
+            handleAgentVisibility(isVisible)
+        }
+        .onAppear {
+            if agentAttention.hasVisibleAgentContent {
+                doOpen()
+            }
+        }
     }
 
     @ViewBuilder
@@ -143,7 +158,7 @@ struct ContentView: View {
                 .zIndex(2)
 
             if vm.notchState == .open {
-                NudgeNotchView()
+                NudgeNotchView(agentFocusController: agentFocusController)
                     .transition(
                         .scale(scale: 0.8, anchor: .top)
                             .combined(with: .opacity)
@@ -161,6 +176,12 @@ struct ContentView: View {
     }
 
     private func handleHover(_ hovering: Bool) {
+        if hovering {
+            agentAttention.hoverBegan()
+        } else {
+            agentAttention.hoverEnded()
+        }
+
         if coordinator.firstLaunch { return }
         hoverTask?.cancel()
 
@@ -192,6 +213,10 @@ struct ContentView: View {
                 await MainActor.run {
                     withAnimation(animationSpring) { self.isHovering = false }
                     if self.vm.notchState == .open {
+                        if self.agentAttention.state.activeRequest != nil
+                            || self.agentAttention.state.completion != nil {
+                            return
+                        }
                         // The picker shrinks away from the pointer after attaching.
                         // Keep the GIF draft visible so the user can choose a recipient.
                         guard self.draft.gif == nil else { return }
@@ -245,10 +270,29 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 if !self.isHovering, self.draft.gif == nil {
+                    if self.agentAttention.hasVisibleAgentContent { return }
                     self.vm.close()
                 }
             }
         }
+    }
+
+    private func handleAgentVisibility(_ isVisible: Bool) {
+        if isVisible {
+            doOpen()
+            return
+        }
+
+        if let ping = transport.lastIncoming,
+           Date().timeIntervalSince(ping.receivedAt) < 6 {
+            // Stay open for the ping, without the agent panel's extra height.
+            doOpen()
+            return
+        }
+        vm.close()
+        // close() keeps the notch open while a GIF pick or text send is in
+        // progress; drop the agent panel's extra height in that case.
+        if vm.notchState == .open { doOpen() }
     }
 }
 
