@@ -5,6 +5,7 @@
 ### Added
 
 - Install signed, notarized updates directly from Check for Updates using Sparkle.
+- Check once a day for new releases and notify users automatically; updates still require confirmation before installation.
 
 ## 0.5.2 — 2026-11-02
 

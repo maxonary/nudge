@@ -25,7 +25,7 @@ Press **Escape** while interacting with the notch, or click outside it, to close
 
 The hand-wave menu includes Settings, sound and notification toggles, launch at login, **Check for Updates**, and Quit. Settings also contains your identity, team password, known teammates, all-time statistics, and an optional GIF API key override.
 
-Check for Updates uses Sparkle to find, download, verify, and install the latest notarized release in place. Nudge restarts to finish installation; saved counts, leaderboard totals, identity, and team password are retained.
+Nudge checks for updates automatically once a day and notifies you when a new release is available. Choose **Check for Updates** to check immediately or install an available release through Sparkle. Nudge restarts to finish installation; saved counts, leaderboard totals, identity, and team password are retained.
 
 See [CHANGELOG.md](CHANGELOG.md) for release changes.
 

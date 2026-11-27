@@ -15,5 +15,9 @@
 	<string>$(KLIPY_API_KEY)</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/maxonary/nudge/releases/latest/download/appcast.xml</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>
