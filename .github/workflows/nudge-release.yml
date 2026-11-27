@@ -109,12 +109,33 @@ jobs:
 
       - name: Locate app
         id: app
+        env:
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
         run: |
           set -euo pipefail
           APP_PATH=$(find build/Nudge.xcarchive/Products/Applications -maxdepth 1 -name '*.app' | head -n 1)
           if [[ -z "${APP_PATH}" ]]; then echo "::error::No .app in archive"; exit 1; fi
           echo "app_path=${APP_PATH}" >> "$GITHUB_OUTPUT"
           echo "Found: ${APP_PATH}"
+
+          # Xcode archive alone leaves Sparkle's helper tools ad-hoc signed.
+          # Re-sign them with Developer ID before notarizing this archived app.
+          SPARKLE_FRAMEWORK="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
+          codesign --force --sign "${SIGN_IDENTITY}" --timestamp --options runtime \
+            "${SPARKLE_FRAMEWORK}/Versions/B/XPCServices/Installer.xpc"
+          codesign --force --sign "${SIGN_IDENTITY}" --timestamp --options runtime \
+            --preserve-metadata=entitlements \
+            "${SPARKLE_FRAMEWORK}/Versions/B/XPCServices/Downloader.xpc"
+          codesign --force --sign "${SIGN_IDENTITY}" --timestamp --options runtime \
+            "${SPARKLE_FRAMEWORK}/Versions/B/Autoupdate"
+          codesign --force --sign "${SIGN_IDENTITY}" --timestamp --options runtime \
+            "${SPARKLE_FRAMEWORK}/Versions/B/Updater.app"
+          codesign --force --sign "${SIGN_IDENTITY}" --timestamp --options runtime \
+            "${SPARKLE_FRAMEWORK}"
+          # Reseal the containing app after updating its nested code signatures.
+          codesign --force --sign "${SIGN_IDENTITY}" --timestamp --options runtime \
+            --entitlements Nudge/Nudge.entitlements --generate-entitlement-der \
+            "${APP_PATH}"
           codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
       - name: Notarize + staple
